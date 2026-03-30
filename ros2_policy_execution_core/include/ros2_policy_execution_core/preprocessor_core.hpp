@@ -17,6 +17,7 @@
 #ifndef ROS2_POLICY_EXECUTION_CORE__PREPROCESSOR_CORE_HPP_
 #define ROS2_POLICY_EXECUTION_CORE__PREPROCESSOR_CORE_HPP_
 
+#include <cstdint>
 #include <deque>
 #include <exception>
 #include <functional>
@@ -36,6 +37,20 @@ struct PreprocessorCoreConfig
 };
 
 /**
+ * @brief Data returned by an observation provider.
+ *
+ * Contains both the observation values and an optional timestamp.
+ * The timestamp is in nanoseconds, compatible with:
+ * - rclcpp::Time: `rclcpp_time.nanoseconds()`
+ * - std::chrono: `duration_cast<nanoseconds>(tp.time_since_epoch()).count()`
+ */
+struct ObservationData
+{
+  const std::vector<double> & values;  ///< Reference to observation values
+  int64_t timestamp_ns = 0;            ///< Timestamp in nanoseconds (0 if not applicable)
+};
+
+/**
  * @brief Abstract base class for preprocessors in the policy execution pipeline.
  *
  * This class serves as a plugin base class for creating custom preprocessors
@@ -45,7 +60,7 @@ class PreprocessorCore
 {
 public:
   /// @brief Function signature for observation data providers
-  using ObservationProvider = std::function<const std::vector<double> &()>;
+  using ObservationProvider = std::function<const ObservationData &()>;
 
   /**
    * @brief Virtual destructor for proper cleanup of derived classes.
@@ -100,8 +115,9 @@ public:
     current_observation_.clear();
     for (const auto & [name, provider] : observation_providers_)
     {
-      const auto & segment = provider();
-      current_observation_.insert(current_observation_.end(), segment.begin(), segment.end());
+      const auto data = provider();
+      current_observation_.insert(
+        current_observation_.end(), data.values.begin(), data.values.end());
     }
     return true;
   }
