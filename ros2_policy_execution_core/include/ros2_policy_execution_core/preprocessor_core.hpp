@@ -26,6 +26,8 @@
 #include <utility>
 #include <vector>
 
+#include "rclcpp/time.hpp"
+
 namespace ros2_policy_execution_core
 {
 
@@ -40,14 +42,11 @@ struct PreprocessorCoreConfig
  * @brief Data returned by an observation provider.
  *
  * Contains both the observation values and an optional timestamp.
- * The timestamp is in nanoseconds, compatible with:
- * - rclcpp::Time: `rclcpp_time.nanoseconds()`
- * - std::chrono: `duration_cast<nanoseconds>(tp.time_since_epoch()).count()`
  */
 struct ObservationData
 {
   const std::vector<double> & values;  ///< Reference to observation values
-  int64_t timestamp_ns = 0;            ///< Timestamp in nanoseconds (0 if not applicable)
+  rclcpp::Time timestamp;              ///< Timestamp of the observation data
 };
 
 /**
