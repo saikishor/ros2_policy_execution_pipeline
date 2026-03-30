@@ -23,6 +23,7 @@
 #include <functional>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -105,20 +106,35 @@ public:
    * @brief Build the observation vector by calling all registered providers.
    *
    * Providers are called in the order they were registered, and their outputs
-   * are concatenated to form the final observation vector.
+   * are concatenated to form the final observation vector. The time difference
+   * between the provided current_time and each observation's timestamp is stored.
    *
+   * @param[in] current_time The current time to calculate time differences against
    * @return true if observation was built successfully, false otherwise
    */
-  virtual bool build_observation()
+  virtual bool build_observation(const rclcpp::Time & current_time)
   {
     current_observation_.clear();
+    observation_time_diffs_.clear();
     for (const auto & [name, provider] : observation_providers_)
     {
-      const auto data = provider();
+      const auto & data = provider();
       current_observation_.insert(
         current_observation_.end(), data.values.begin(), data.values.end());
+      observation_time_diffs_[name] = (current_time - data.timestamp).seconds();
     }
     return true;
+  }
+
+  /**
+   * @brief Get all observation provider time differences.
+   *
+   * @return const reference to the map of provider names to time differences (in seconds)
+   */
+  [[nodiscard]] const std::unordered_map<std::string, double> &
+  get_observation_time_diffs() const
+  {
+    return observation_time_diffs_;
   }
 
   /**
@@ -226,6 +242,9 @@ private:
 
   /// Registered observation providers (name -> provider function)
   std::vector<std::pair<std::string, ObservationProvider>> observation_providers_ = {};
+
+  /// Time differences per observation provider (name -> seconds since observation timestamp)
+  std::unordered_map<std::string, double> observation_time_diffs_ = {};
 };
 
 }  // namespace ros2_policy_execution_core
