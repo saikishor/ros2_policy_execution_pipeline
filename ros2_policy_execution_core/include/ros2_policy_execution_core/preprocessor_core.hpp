@@ -19,7 +19,10 @@
 
 #include <deque>
 #include <exception>
+#include <functional>
 #include <stdexcept>
+#include <string>
+#include <utility>
 #include <vector>
 
 namespace ros2_policy_execution_core
@@ -41,6 +44,9 @@ struct PreprocessorCoreConfig
 class PreprocessorCore
 {
 public:
+  /// @brief Function signature for observation data providers
+  using ObservationProvider = std::function<const std::vector<double> &()>;
+
   /**
    * @brief Virtual destructor for proper cleanup of derived classes.
    */
@@ -58,27 +64,75 @@ public:
   }
 
   /**
-   * @brief Set the current observation vector.
+   * @brief Register an observation provider with a name.
    *
-   * This pure virtual method must be implemented by derived classes to store
-   * the current observation vector and manage the history of observations.
+   * Providers are called in order of registration when build_observation() is invoked.
+   * The vectors returned by each provider are concatenated in registration order
+   * to form the final observation vector.
    *
-   * @param[in] observation The current observation vector to be stored.
+   * @param[in] name Unique name for this segment (used for debugging/introspection)
+   * @param[in] provider Function that returns a vector of doubles for this segment
+   * @throws std::runtime_error if a provider with the same name already exists
    */
-  virtual void set_observation_data(const std::vector<double> & observation)
+  void register_observation_provider(const std::string & name, ObservationProvider provider)
   {
-    current_observation_ = observation;
+    // Check for duplicate names
+    for (const auto & entry : observation_providers_)
+    {
+      if (entry.first == name)
+      {
+        throw std::runtime_error("Observation provider with name '" + name + "' already exists.");
+      }
+    }
+    observation_providers_.emplace_back(name, std::move(provider));
   }
 
   /**
-   * @brief Build and return the observation vector.
+   * @brief Build the observation vector by calling all registered providers.
    *
-   * This pure virtual method must be implemented by derived classes to construct
-   * the observation vector from the stored data.
+   * Providers are called in the order they were registered, and their outputs
+   * are concatenated to form the final observation vector.
+   *
+   * @return true if observation was built successfully, false otherwise
+   */
+  virtual bool build_observation()
+  {
+    current_observation_.clear();
+    for (const auto & [name, provider] : observation_providers_)
+    {
+      const auto & segment = provider();
+      current_observation_.insert(current_observation_.end(), segment.begin(), segment.end());
+    }
+    return true;
+  }
+
+  /**
+   * @brief Check if any observation providers are registered.
+   *
+   * @return true if at least one provider is registered
+   */
+  [[nodiscard]] bool has_observation_providers() const
+  {
+    return !observation_providers_.empty();
+  }
+
+  /**
+   * @brief Clear all registered observation providers.
+   */
+  void clear_observation_providers()
+  {
+    observation_providers_.clear();
+  }
+
+  /**
+   * @brief Get the current observation vector.
+   *
+   * Returns the observation vector, whether it was set via set_observation_data()
+   * or built via build_observation().
    *
    * @return const reference to the observation vector.
    */
-  virtual [[nodiscard]] const std::vector<double> & get_observation() const
+  [[nodiscard]] virtual const std::vector<double> & get_observation() const
   {
     return current_observation_;
   }
@@ -154,6 +208,9 @@ private:
 
   /// Length of the action vector
   size_t action_history_length_ = 0;
+
+  /// Registered observation providers (name -> provider function)
+  std::vector<std::pair<std::string, ObservationProvider>> observation_providers_ = {};
 };
 
 }  // namespace ros2_policy_execution_core
