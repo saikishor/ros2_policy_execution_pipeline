@@ -19,6 +19,8 @@
 
 #include <vector>
 
+#include "rclcpp/node.hpp"
+
 namespace ros2_policy_execution_core
 {
 
@@ -35,6 +37,17 @@ public:
    * @brief Virtual destructor for proper cleanup of derived classes.
    */
   virtual ~InferenceCore() = default;
+
+  /**
+   * @brief Configure the inference engine with necessary parameters or ROS2 node.
+   *
+   * This pure virtual method must be implemented by derived classes to perform
+   * any necessary configuration steps, such as loading policy models or reading
+   * parameters from the ROS2 node.
+   *
+   * @param[in] node Shared pointer to the ROS2 node for accessing parameters and other resources.
+   */
+  virtual void configure(const rclcpp::Node::SharedPtr & node) = 0;
 
   /**
    * @brief Run inference on the given observations and produce outputs.

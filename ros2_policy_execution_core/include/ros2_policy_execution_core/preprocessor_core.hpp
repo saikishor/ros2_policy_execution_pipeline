@@ -27,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+#include "rclcpp/node.hpp"
 #include "rclcpp/time.hpp"
 
 namespace ros2_policy_execution_core
@@ -66,6 +67,17 @@ public:
    * @brief Virtual destructor for proper cleanup of derived classes.
    */
   virtual ~PreprocessorCore() = default;
+
+  /**
+   * @brief Configure the preprocessor with necessary parameters or ROS2 node.
+   *
+   * This pure virtual method must be implemented by derived classes to perform
+   * any necessary configuration steps, such as reading parameters from the ROS2 node.
+   * Creating appropriate subscriptions or service clients can also be done here
+   *
+   * @param[in] node Shared pointer to the ROS2 node for accessing parameters and other resources.
+   */
+  virtual void configure(const rclcpp::Node::SharedPtr & node) = 0;
 
   /**
    * @brief Set the configuration for the preprocessor.
