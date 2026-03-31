@@ -26,7 +26,7 @@ namespace ros2_policy_execution_core
  * @brief Abstract base class for postprocessors in the policy execution pipeline.
  *
  * This class serves as a plugin base class for creating custom postprocessors
- * that transform raw actions from inference into final commands to be sent.
+ * that transform raw output from inference into final commands to be sent.
  */
 class PostprocessorCore
 {
@@ -37,15 +37,15 @@ public:
   virtual ~PostprocessorCore() = default;
 
   /**
-   * @brief Process the actions and return the final commands.
+   * @brief Process the inference output and return the final commands.
    *
    * This pure virtual method must be implemented by derived classes to perform
-   * the final postprocessing on the actions and produce the commands to be sent.
+   * the final postprocessing on the inference output and produce the commands to be sent.
    *
-   * @param[in] actions The action vector from inference to be postprocessed.
+   * @param[in] inference_output The output vector from inference to be postprocessed.
    * @return The final commands vector to be sent.
    */
-  virtual [[nodiscard]] const std::vector<float> & process(const std::vector<float> & actions) = 0;
+  virtual [[nodiscard]] const std::vector<float> & process(const std::vector<float> & inference_output) = 0;
 };
 
 }  // namespace ros2_policy_execution_core

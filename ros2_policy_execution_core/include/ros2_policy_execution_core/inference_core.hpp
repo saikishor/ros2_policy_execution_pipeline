@@ -26,7 +26,7 @@ namespace ros2_policy_execution_core
  * @brief Abstract base class for inference engines in the policy execution pipeline.
  *
  * This class serves as a plugin base class for creating custom inference engines
- * that run policy inference given observations and produce actions.
+ * that run policy inference given observations and produce outputs.
  */
 class InferenceCore
 {
@@ -37,16 +37,16 @@ public:
   virtual ~InferenceCore() = default;
 
   /**
-   * @brief Run inference on the given observations and produce actions.
+   * @brief Run inference on the given observations and produce outputs.
    *
    * This pure virtual method must be implemented by derived classes to perform
    * the actual inference computation using the loaded policy model.
    *
    * @param[in] obs The observation vector to use as input for inference.
-   * @param[out] action The action vector that will be populated with the inference results.
+   * @param[out] output The output vector that will be populated with the inference results.
    * @return true if inference was successful, false otherwise.
    */
-  virtual bool run_inference(const std::vector<float> & obs, std::vector<float> & action) = 0;
+  virtual bool run_inference(const std::vector<float> & obs, std::vector<float> & output) = 0;
 };
 
 }  // namespace ros2_policy_execution_core
