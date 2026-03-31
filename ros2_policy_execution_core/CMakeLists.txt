@@ -36,8 +36,11 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gmock REQUIRED)
   ament_lint_auto_find_test_dependencies()
 
-  ament_add_gmock(test_preprocessor_core test/test_preprocessor_core.cpp)
-  target_link_libraries(test_preprocessor_core
+  ament_add_gmock(test_preprocessor
+    test/test_preprocessor_core.cpp
+    test/test_preprocessor_support.cpp
+  )
+  target_link_libraries(test_preprocessor
     ${PROJECT_NAME}
   )
 endif()
