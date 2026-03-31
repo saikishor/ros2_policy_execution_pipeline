@@ -86,10 +86,13 @@ public:
    * to form the final observation vector.
    *
    * @param[in] name Unique name for this segment (used for debugging/introspection)
+   * @param[in] observation_segment_names Names of the individual segments provided by this
+   *  provider (used for debugging/introspection)
    * @param[in] provider Function that returns a vector of floats for this segment
    * @throws std::runtime_error if a provider with the same name already exists
    */
-  void register_observation_provider(const std::string & name, ObservationProvider provider)
+  void register_observation_provider(const std::string & name, 
+    const std::vector<std::string> & observation_segment_names, ObservationProvider provider)
   {
     // Check for duplicate names
     for (const auto & entry : observation_providers_)
@@ -100,6 +103,7 @@ public:
       }
     }
     observation_providers_.emplace_back(name, std::move(provider));
+    observation_segment_names_.emplace_back(name, observation_segment_names);
   }
 
   /**
@@ -224,6 +228,16 @@ public:
     }
   }
 
+  std::vector<std::string> get_observation_names() const
+  {
+    std::vector<std::string> segment_names;
+    for (const auto & [name, provider_segment_names] : observation_segment_names_)
+    {
+      segment_names.insert(segment_names.end(), provider_segment_names.begin(), provider_segment_names.end());
+    }
+    return segment_names;
+  }
+
 private:
   /// Storage for the current observation vector
   std::vector<float> current_observation_ = {};
@@ -239,6 +253,10 @@ private:
 
   /// Length of the action vector
   size_t action_history_length_ = 0;
+
+  /// Registered observation provider segment names (name -> vector of segment names)
+  std::vector<std::pair<std::string, std::vector<std::string>>> observation_segment_names_ = {};
+
 
   /// Registered observation providers (name -> provider function)
   std::vector<std::pair<std::string, ObservationProvider>> observation_providers_ = {};
