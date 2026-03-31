@@ -120,9 +120,28 @@ public:
   {
     current_observation_.clear();
     observation_time_diffs_.clear();
-    for (const auto & [name, provider] : observation_providers_)
+    for (auto i = 0; i < observation_providers_.size(); ++i)
     {
+      const auto & [name, provider] = observation_providers_[i];
       const auto & data = provider();
+      if (name != observation_segment_names_[i].first)
+      {
+        throw std::runtime_error("Observation provider name does not match segment name entry.");
+      }
+      if (data.values.empty())
+      {
+        throw std::runtime_error("Observation provider '" + name + "' returned an empty vector.");
+      }
+      if (data.timestamp > current_time)
+      {
+        throw std::runtime_error("Observation provider '" + name + "' returned a timestamp in the future.");
+      }
+      if (data.values.size() != observation_segment_names_[i].second.size())
+      {
+        throw std::runtime_error("Observation provider '" + name + "' returned a vector of size " +
+          std::to_string(data.values.size()) + " but expected " +
+          std::to_string(observation_segment_names_[i].second.size()) + " based on the segment names.");
+      }
       current_observation_.insert(
         current_observation_.end(), data.values.begin(), data.values.end());
       observation_time_diffs_[name] = (current_time - data.timestamp).seconds();
