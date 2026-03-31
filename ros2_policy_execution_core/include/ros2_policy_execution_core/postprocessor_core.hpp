@@ -58,7 +58,8 @@ public:
    * @param[in] inference_output The output vector from inference to be postprocessed.
    * @return The final commands vector to be sent.
    */
-  virtual [[nodiscard]] const std::vector<float> & process(const std::vector<float> & inference_output) = 0;
+  virtual [[nodiscard]] const std::vector<float> & process(
+    const std::vector<float> & inference_output) = 0;
 };
 
 }  // namespace ros2_policy_execution_core

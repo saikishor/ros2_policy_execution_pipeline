@@ -103,14 +103,13 @@ public:
    * @param[in] provider Function that returns a vector of floats for this segment
    * @throws std::runtime_error if a provider with the same name already exists
    */
-  void register_observation_provider(const std::string & name, 
+  void register_observation_provider(
+    const std::string & name,
     const std::vector<std::string> & observation_segment_names, ObservationProvider provider)
   {
     // Check for duplicate names
-    for (const auto & entry : observation_providers_)
-    {
-      if (entry.first == name)
-      {
+    for (const auto & entry : observation_providers_) {
+      if (entry.first == name) {
         throw std::runtime_error("Observation provider with name '" + name + "' already exists.");
       }
     }
@@ -132,27 +131,24 @@ public:
   {
     current_observation_.clear();
     observation_time_diffs_.clear();
-    for (auto i = 0; i < observation_providers_.size(); ++i)
-    {
+    for (size_t i = 0; i < observation_providers_.size(); ++i) {
       const auto & [name, provider] = observation_providers_[i];
       const auto & data = provider();
-      if (name != observation_segment_names_[i].first)
-      {
+      if (name != observation_segment_names_[i].first) {
         throw std::runtime_error("Observation provider name does not match segment name entry.");
       }
-      if (data.values.empty())
-      {
+      if (data.values.empty()) {
         throw std::runtime_error("Observation provider '" + name + "' returned an empty vector.");
       }
-      if (data.timestamp > current_time)
-      {
-        throw std::runtime_error("Observation provider '" + name + "' returned a timestamp in the future.");
+      if (data.timestamp > current_time) {
+        throw std::runtime_error(
+          "Observation provider '" + name + "' returned a timestamp in the future.");
       }
-      if (data.values.size() != observation_segment_names_[i].second.size())
-      {
+      if (data.values.size() != observation_segment_names_[i].second.size()) {
         throw std::runtime_error("Observation provider '" + name + "' returned a vector of size " +
           std::to_string(data.values.size()) + " but expected " +
-          std::to_string(observation_segment_names_[i].second.size()) + " based on the segment names.");
+          std::to_string(observation_segment_names_[i].second.size()) +
+          " based on the segment names.");
       }
       current_observation_.insert(
         current_observation_.end(), data.values.begin(), data.values.end());
@@ -205,9 +201,9 @@ public:
 
   /**
    * @brief Return the history of observations
-   * @note the first element of the history is the most recent observation, and 
+   * @note the first element of the history is the most recent observation, and
    * the last element is the oldest observation
-   * 
+   *
    * @return const reference to the vector of observation vectors.
    */
   [[nodiscard]] const std::deque<std::vector<float>> & get_observation_history() const
@@ -217,9 +213,9 @@ public:
 
   /**
    * @brief Return the history of actions
-   * @note the first element of the history is the most recent action, and 
+   * @note the first element of the history is the most recent action, and
    * the last element is the oldest action
-   * 
+   *
    * @return const reference to the vector of action vectors.
    */
   [[nodiscard]] const std::deque<std::vector<float>> & get_action_history() const
@@ -229,15 +225,12 @@ public:
 
   void set_previous_observations(const std::vector<float> & observations)
   {
-    if (observation_history_length_ > 0)
-    {
-      if (!observations_.empty() && observations_[0].size() != observations.size())
-      {
+    if (observation_history_length_ > 0) {
+      if (!observations_.empty() && observations_[0].size() != observations.size()) {
         throw std::runtime_error("Observation size does not match the previous observation size.");
       }
-      if (observations_.size() >= observation_history_length_)
-      {
-          observations_.pop_back();
+      if (observations_.size() >= observation_history_length_) {
+        observations_.pop_back();
       }
       observations_.push_front(observations);
     }
@@ -245,15 +238,12 @@ public:
 
   void set_previous_actions(const std::vector<float> & actions)
   {
-    if (action_history_length_ > 0)
-    {
-      if (!actions_.empty() && actions_[0].size() != actions.size())
-      {
+    if (action_history_length_ > 0) {
+      if (!actions_.empty() && actions_[0].size() != actions.size()) {
         throw std::runtime_error("Action size does not match the previous action size.");
       }
-      if (actions_.size() >= action_history_length_)
-      {
-          actions_.pop_back();
+      if (actions_.size() >= action_history_length_) {
+        actions_.pop_back();
       }
       actions_.push_front(actions);
     }
@@ -262,9 +252,9 @@ public:
   std::vector<std::string> get_observation_names() const
   {
     std::vector<std::string> segment_names;
-    for (const auto & [name, provider_segment_names] : observation_segment_names_)
-    {
-      segment_names.insert(segment_names.end(), provider_segment_names.begin(), provider_segment_names.end());
+    for (const auto & [name, provider_segment_names] : observation_segment_names_) {
+      segment_names.insert(segment_names.end(),
+        provider_segment_names.begin(), provider_segment_names.end());
     }
     return segment_names;
   }
