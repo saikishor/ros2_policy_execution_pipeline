@@ -45,7 +45,7 @@ public:
    * @param[in] actions The action vector from inference to be postprocessed.
    * @return The final commands vector to be sent.
    */
-  virtual [[nodiscard]] const std::vector<double> & process(const std::vector<double> & actions) = 0;
+  virtual [[nodiscard]] const std::vector<float> & process(const std::vector<float> & actions) = 0;
 };
 
 }  // namespace ros2_policy_execution_core

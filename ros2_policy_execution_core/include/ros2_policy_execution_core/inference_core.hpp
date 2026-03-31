@@ -46,7 +46,7 @@ public:
    * @param[out] action The action vector that will be populated with the inference results.
    * @return true if inference was successful, false otherwise.
    */
-  virtual bool run_inference(const std::vector<double> & obs, std::vector<double> & action) = 0;
+  virtual bool run_inference(const std::vector<float> & obs, std::vector<float> & action) = 0;
 };
 
 }  // namespace ros2_policy_execution_core

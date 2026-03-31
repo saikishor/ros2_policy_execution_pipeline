@@ -46,7 +46,7 @@ struct PreprocessorCoreConfig
  */
 struct ObservationData
 {
-  const std::vector<double> & values;  ///< Reference to observation values
+  const std::vector<float> & values;  ///< Reference to observation values
   rclcpp::Time timestamp;              ///< Timestamp of the observation data
 };
 
@@ -86,7 +86,7 @@ public:
    * to form the final observation vector.
    *
    * @param[in] name Unique name for this segment (used for debugging/introspection)
-   * @param[in] provider Function that returns a vector of doubles for this segment
+   * @param[in] provider Function that returns a vector of floats for this segment
    * @throws std::runtime_error if a provider with the same name already exists
    */
   void register_observation_provider(const std::string & name, ObservationProvider provider)
@@ -163,7 +163,7 @@ public:
    *
    * @return const reference to the observation vector.
    */
-  [[nodiscard]] virtual const std::vector<double> & get_observation() const
+  [[nodiscard]] virtual const std::vector<float> & get_observation() const
   {
     return current_observation_;
   }
@@ -175,7 +175,7 @@ public:
    * 
    * @return const reference to the vector of observation vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<double>> & get_observation_history() const
+  [[nodiscard]] const std::deque<std::vector<float>> & get_observation_history() const
   {
     return observations_;
   }
@@ -187,12 +187,12 @@ public:
    * 
    * @return const reference to the vector of action vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<double>> & get_action_history() const
+  [[nodiscard]] const std::deque<std::vector<float>> & get_action_history() const
   {
     return actions_;
   }
 
-  void set_previous_observations(const std::vector<double> & observations)
+  void set_previous_observations(const std::vector<float> & observations)
   {
     if (observation_history_length_ > 0)
     {
@@ -208,7 +208,7 @@ public:
     }
   }
 
-  void set_previous_actions(const std::vector<double> & actions)
+  void set_previous_actions(const std::vector<float> & actions)
   {
     if (action_history_length_ > 0)
     {
@@ -226,13 +226,13 @@ public:
 
 private:
   /// Storage for the current observation vector
-  std::vector<double> current_observation_ = {};
+  std::vector<float> current_observation_ = {};
 
-  /// Storage for observation data as a deque of vectors of doubles
-  std::deque<std::vector<double>> observations_ = {};
+  /// Storage for observation data as a deque of vectors of floats
+  std::deque<std::vector<float>> observations_ = {};
 
-  /// Storage for action data as a deque of vectors of doubles
-  std::deque<std::vector<double>> actions_ = {};
+  /// Storage for action data as a deque of vectors of floats
+  std::deque<std::vector<float>> actions_ = {};
 
   /// Length of the observation vector
   size_t observation_history_length_ = 0;
