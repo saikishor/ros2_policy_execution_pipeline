@@ -33,7 +33,13 @@ install(
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
+  find_package(ament_cmake_gmock REQUIRED)
   ament_lint_auto_find_test_dependencies()
+
+  ament_add_gmock(test_preprocessor_core test/test_preprocessor_core.cpp)
+  target_link_libraries(test_preprocessor_core
+    ${PROJECT_NAME}
+  )
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
