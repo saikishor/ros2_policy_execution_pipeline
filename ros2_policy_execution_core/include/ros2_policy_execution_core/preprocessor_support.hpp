@@ -64,10 +64,8 @@ public:
     const std::vector<std::string> & observation_segment_names,
     ObservationProvider provider)
   {
-    for (const auto & entry : providers_)
-    {
-      if (entry.first == name)
-      {
+    for (const auto & entry : providers_) {
+      if (entry.first == name) {
         throw std::runtime_error("Observation provider with name '" + name + "' already exists.");
       }
     }
@@ -106,7 +104,8 @@ public:
    *
    * @return const reference to the (provider name, segment names) list.
    */
-  [[nodiscard]] const std::vector<std::pair<std::string, std::vector<std::string>>> & segment_names() const
+  [[nodiscard]] const std::vector<std::pair<std::string,
+    std::vector<std::string>>> & segment_names() const
   {
     return segment_names_;
   }
@@ -182,13 +181,11 @@ public:
 private:
   static void trim_to_length(std::deque<std::vector<float>> & data, size_t max_length)
   {
-    if (max_length == 0)
-    {
+    if (max_length == 0) {
       data.clear();
       return;
     }
-    while (data.size() > max_length)
-    {
+    while (data.size() > max_length) {
       data.pop_back();
     }
   }
@@ -197,18 +194,15 @@ private:
     const std::vector<float> & values, size_t max_length, std::deque<std::vector<float>> & history,
     const std::string & value_name)
   {
-    if (max_length == 0)
-    {
+    if (max_length == 0) {
       return;
     }
 
-    if (!history.empty() && history.front().size() != values.size())
-    {
+    if (!history.empty() && history.front().size() != values.size()) {
       throw std::runtime_error(
               value_name + " size does not match the previous " + value_name + " size.");
     }
-    if (history.size() >= max_length)
-    {
+    if (history.size() >= max_length) {
       history.pop_back();
     }
     history.push_front(values);

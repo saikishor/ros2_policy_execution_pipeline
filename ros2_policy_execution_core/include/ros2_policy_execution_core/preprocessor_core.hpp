@@ -117,25 +117,21 @@ public:
     observation_time_diffs_.clear();
     const auto & providers = provider_registry_.providers();
     const auto & segment_entries = provider_registry_.segment_names();
-    for (size_t i = 0; i < providers.size(); ++i)
-    {
+    for (size_t i = 0; i < providers.size(); ++i) {
       const auto & [name, provider] = providers[i];
       const auto & data = provider();
       const auto & seg_entry = segment_entries[i];
-      if (name != seg_entry.first)
-      {
+      if (name != seg_entry.first) {
         throw std::runtime_error("Observation provider name does not match segment name entry.");
       }
       if (data.values.empty()) {
         throw std::runtime_error("Observation provider '" + name + "' returned an empty vector.");
       }
-      if (data.timestamp > current_time)
-      {
+      if (data.timestamp > current_time) {
         throw std::runtime_error(
                 "Observation provider '" + name + "' returned a timestamp in the future.");
       }
-      if (data.values.size() != seg_entry.second.size())
-      {
+      if (data.values.size() != seg_entry.second.size()) {
         throw std::runtime_error(
                 "Observation provider '" + name + "' returned a vector of size " +
                 std::to_string(data.values.size()) + " but expected " +
@@ -227,8 +223,7 @@ public:
   std::vector<std::string> get_observation_names() const
   {
     std::vector<std::string> segment_names;
-    for (const auto & [name, provider_segment_names] : provider_registry_.segment_names())
-    {
+    for (const auto & [name, provider_segment_names] : provider_registry_.segment_names()) {
       segment_names.insert(
         segment_names.end(), provider_segment_names.begin(), provider_segment_names.end());
     }
