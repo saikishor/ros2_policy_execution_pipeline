@@ -126,8 +126,7 @@ public:
       {
         throw std::runtime_error("Observation provider name does not match segment name entry.");
       }
-      if (data.values.empty())
-      {
+      if (data.values.empty()) {
         throw std::runtime_error("Observation provider '" + name + "' returned an empty vector.");
       }
       if (data.timestamp > current_time)
