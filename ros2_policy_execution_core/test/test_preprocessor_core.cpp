@@ -374,10 +374,5 @@ TEST_F(PreprocessorCoreTest, BuildObservationClearsAndRebuilds)
   preprocessor_->build_observation(current_time);
   EXPECT_FLOAT_EQ(preprocessor_->get_observation()[0], 100.0f);
 }
-}  // namespace ros2_policy_execution_core
 
-int main(int argc, char ** argv)
-{
-  ::testing::InitGoogleTest(&argc, argv);
-  return RUN_ALL_TESTS();
-}
+}  // namespace ros2_policy_execution_core

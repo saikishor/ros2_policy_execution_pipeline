@@ -20,8 +20,6 @@
 #include <cstdint>
 #include <deque>
 #include <exception>
-#include <functional>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -29,6 +27,8 @@
 
 #include "rclcpp/node.hpp"
 #include "rclcpp/time.hpp"
+
+#include "ros2_policy_execution_core/preprocessor_support.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -41,17 +41,6 @@ struct PreprocessorCoreConfig
 };
 
 /**
- * @brief Data returned by an observation provider.
- *
- * Contains both the observation values and an optional timestamp.
- */
-struct ObservationData
-{
-  const std::vector<float> & values;  ///< Reference to observation values
-  rclcpp::Time timestamp;              ///< Timestamp of the observation data
-};
-
-/**
  * @brief Abstract base class for preprocessors in the policy execution pipeline.
  *
  * This class serves as a plugin base class for creating custom preprocessors
@@ -61,7 +50,7 @@ class PreprocessorCore
 {
 public:
   /// @brief Function signature for observation data providers
-  using ObservationProvider = std::function<const ObservationData &()>;
+  using ObservationProvider = ObservationProviderRegistry::ObservationProvider;
 
   /**
    * @brief Virtual destructor for proper cleanup of derived classes.
@@ -86,8 +75,9 @@ public:
    */
   void set_config(const PreprocessorCoreConfig & config)
   {
-    observation_history_length_ = config.observation_history_length;
-    action_history_length_ = config.action_history_length;
+    history_manager_.set_lengths(
+      config.observation_history_length,
+      config.action_history_length);
   }
 
   /**
@@ -105,16 +95,10 @@ public:
    */
   void register_observation_provider(
     const std::string & name,
-    const std::vector<std::string> & observation_segment_names, ObservationProvider provider)
+    const std::vector<std::string> & observation_segment_names,
+    ObservationProvider provider)
   {
-    // Check for duplicate names
-    for (const auto & entry : observation_providers_) {
-      if (entry.first == name) {
-        throw std::runtime_error("Observation provider with name '" + name + "' already exists.");
-      }
-    }
-    observation_providers_.emplace_back(name, std::move(provider));
-    observation_segment_names_.emplace_back(name, observation_segment_names);
+    provider_registry_.register_provider(name, observation_segment_names, std::move(provider));
   }
 
   /**
@@ -131,10 +115,13 @@ public:
   {
     current_observation_.clear();
     observation_time_diffs_.clear();
-    for (size_t i = 0; i < observation_providers_.size(); ++i) {
-      const auto & [name, provider] = observation_providers_[i];
+    const auto & providers = provider_registry_.providers();
+    const auto & segment_entries = provider_registry_.segment_names();
+    for (size_t i = 0; i < providers.size(); ++i) {
+      const auto & [name, provider] = providers[i];
       const auto & data = provider();
-      if (name != observation_segment_names_[i].first) {
+      const auto & seg_entry = segment_entries[i];
+      if (name != seg_entry.first) {
         throw std::runtime_error("Observation provider name does not match segment name entry.");
       }
       if (data.values.empty()) {
@@ -142,13 +129,13 @@ public:
       }
       if (data.timestamp > current_time) {
         throw std::runtime_error(
-          "Observation provider '" + name + "' returned a timestamp in the future.");
+                "Observation provider '" + name + "' returned a timestamp in the future.");
       }
-      if (data.values.size() != observation_segment_names_[i].second.size()) {
-        throw std::runtime_error("Observation provider '" + name + "' returned a vector of size " +
-          std::to_string(data.values.size()) + " but expected " +
-          std::to_string(observation_segment_names_[i].second.size()) +
-          " based on the segment names.");
+      if (data.values.size() != seg_entry.second.size()) {
+        throw std::runtime_error(
+                "Observation provider '" + name + "' returned a vector of size " +
+                std::to_string(data.values.size()) + " but expected " +
+                std::to_string(seg_entry.second.size()) + " based on the segment names.");
       }
       current_observation_.insert(
         current_observation_.end(), data.values.begin(), data.values.end());
@@ -175,7 +162,7 @@ public:
    */
   [[nodiscard]] bool has_observation_providers() const
   {
-    return !observation_providers_.empty();
+    return !provider_registry_.empty();
   }
 
   /**
@@ -183,7 +170,7 @@ public:
    */
   void clear_observation_providers()
   {
-    observation_providers_.clear();
+    provider_registry_.clear();
   }
 
   /**
@@ -208,7 +195,7 @@ public:
    */
   [[nodiscard]] const std::deque<std::vector<float>> & get_observation_history() const
   {
-    return observations_;
+    return history_manager_.observations();
   }
 
   /**
@@ -220,41 +207,25 @@ public:
    */
   [[nodiscard]] const std::deque<std::vector<float>> & get_action_history() const
   {
-    return actions_;
+    return history_manager_.actions();
   }
 
   void set_previous_observations(const std::vector<float> & observations)
   {
-    if (observation_history_length_ > 0) {
-      if (!observations_.empty() && observations_[0].size() != observations.size()) {
-        throw std::runtime_error("Observation size does not match the previous observation size.");
-      }
-      if (observations_.size() >= observation_history_length_) {
-        observations_.pop_back();
-      }
-      observations_.push_front(observations);
-    }
+    history_manager_.push_observation(observations);
   }
 
   void set_previous_actions(const std::vector<float> & actions)
   {
-    if (action_history_length_ > 0) {
-      if (!actions_.empty() && actions_[0].size() != actions.size()) {
-        throw std::runtime_error("Action size does not match the previous action size.");
-      }
-      if (actions_.size() >= action_history_length_) {
-        actions_.pop_back();
-      }
-      actions_.push_front(actions);
-    }
+    history_manager_.push_action(actions);
   }
 
   std::vector<std::string> get_observation_names() const
   {
     std::vector<std::string> segment_names;
-    for (const auto & [name, provider_segment_names] : observation_segment_names_) {
-      segment_names.insert(segment_names.end(),
-        provider_segment_names.begin(), provider_segment_names.end());
+    for (const auto & [name, provider_segment_names] : provider_registry_.segment_names()) {
+      segment_names.insert(
+        segment_names.end(), provider_segment_names.begin(), provider_segment_names.end());
     }
     return segment_names;
   }
@@ -262,25 +233,8 @@ public:
 private:
   /// Storage for the current observation vector
   std::vector<float> current_observation_ = {};
-
-  /// Storage for observation data as a deque of vectors of floats
-  std::deque<std::vector<float>> observations_ = {};
-
-  /// Storage for action data as a deque of vectors of floats
-  std::deque<std::vector<float>> actions_ = {};
-
-  /// Length of the observation vector
-  size_t observation_history_length_ = 0;
-
-  /// Length of the action vector
-  size_t action_history_length_ = 0;
-
-  /// Registered observation provider segment names (name -> vector of segment names)
-  std::vector<std::pair<std::string, std::vector<std::string>>> observation_segment_names_ = {};
-
-
-  /// Registered observation providers (name -> provider function)
-  std::vector<std::pair<std::string, ObservationProvider>> observation_providers_ = {};
+  ObservationProviderRegistry provider_registry_;
+  HistoryManager history_manager_;
 
   /// Time differences per observation provider (name -> seconds since observation timestamp)
   std::unordered_map<std::string, double> observation_time_diffs_ = {};
