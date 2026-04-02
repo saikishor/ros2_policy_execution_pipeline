@@ -73,6 +73,94 @@ const auto& obs_history = preprocessor.get_observation_history();
 const auto& action_history = preprocessor.get_action_history();
 ```
 
+### Value Types
+
+The package now also provides a backend-agnostic transport type for future preprocessors,
+inference backends, and postprocessors.
+
+The core types live in `value_types.hpp`:
+
+- `SharedBuffer`: pointer + byte count + optional shared owner
+- `Tensor`: dense tensor metadata plus a view into a `SharedBuffer`
+- `Value`: extensible wrapper around a `Tensor`
+- `NamedValue` / `ValueSet`: ordered named inputs and outputs
+
+The important ownership idea is:
+
+- the tensor does not need to own the payload bytes itself
+- it may instead borrow a pointer to bytes owned by something else
+- the optional `owner` field keeps that external object alive
+
+That means a preprocessor can often wrap existing memory directly, for example:
+
+- a `std::vector<float>`
+- a ROS image message payload
+- a compact array built from pose data
+
+without copying the payload again.
+
+ONNX Runtime interop lives separately in `ort_value_conversion.hpp`.
+For dense CPU tensors, the conversion layer can wrap the same payload bytes as an `Ort::Value`
+when ONNX Runtime allows caller-owned buffers.
+
+#### `SharedBuffer` Construction Example
+
+The most common pattern is to keep the original `std::shared_ptr` in the caller and let the
+buffer store another shared handle to the same payload:
+
+```cpp
+auto values = std::make_shared<std::vector<float>>(
+  std::initializer_list<float>{1.0f, 2.0f, 3.0f});
+
+SharedBuffer buffer(values->data(), values->size() * sizeof(float), values);
+
+// `values` is still valid here.
+// `buffer.owner()` also keeps the same vector storage alive.
+```
+
+Only the smart-pointer handle is shared or moved, never the payload bytes themselves.
+If the caller uses `std::move(values)`, then the caller gives its handle to the buffer and
+`values` becomes empty.
+
+#### Examples
+
+Two small examples are provided in `examples/`:
+
+- `value_types_basic_example.cpp`
+  Shows how to wrap a shared vector as a `Tensor`, convert it to `Ort::Value`,
+  and convert it back without copying the payload.
+- `ros2_preprocessor_value_example.cpp`
+  Shows a ROS 2 node that subscribes to image and pose topics and condenses them into a
+  backend-agnostic `ValueSet`.
+
+Run the generic datatype + ONNX example with:
+
+```bash
+ros2 run ros2_policy_execution_core value_types_basic_example
+```
+
+Run the ROS 2 preprocessor-style example with:
+
+```bash
+ros2 run ros2_policy_execution_core ros2_preprocessor_value_example
+```
+
+To exercise the ROS 2 example, publish some input data in separate terminals after sourcing the
+workspace:
+
+```bash
+ros2 topic pub --once /tcp_pose geometry_msgs/msg/PoseStamped \
+  "{pose: {position: {x: 0.1, y: 0.2, z: 0.3}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}"
+```
+
+```bash
+ros2 topic pub --once /image sensor_msgs/msg/Image \
+  "{height: 1, width: 2, encoding: 'rgb8', step: 6, data: [255, 0, 0, 0, 255, 0]}"
+```
+
+The basic ONNX example is only built when ONNX Runtime is available.
+In this environment it is expected under `/opt/onnxruntime/`.
+
 ## API Reference
 
 ### InferenceCore
@@ -102,3 +190,4 @@ const auto& action_history = preprocessor.get_action_history();
 | `set_previous_actions(action)` | Add action to history |
 | `get_observation_history()` | Get observation history (newest first) |
 | `get_action_history()` | Get action history (newest first) |
+
