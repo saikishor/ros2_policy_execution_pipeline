@@ -53,14 +53,16 @@ TEST(OrtValueConversionTest, TensorOrtRoundTripPreservesShapeAndValuesWithoutCop
   EXPECT_EQ(round_trip.data_type(), DataType::kFloat32);
   EXPECT_EQ(round_trip.shape(), std::vector<int64_t>({2, 2}));
   EXPECT_EQ(round_trip.raw_data(), tensor.raw_data());
+  EXPECT_TRUE(round_trip.buffer().is_mutable());
 
-  const Tensor & round_trip_const = round_trip;
-  const auto span = round_trip_const.span<float>();
+  auto span = round_trip.span<float>();
   ASSERT_EQ(span.size(), 4u);
   EXPECT_FLOAT_EQ(span[0], 1.0f);
   EXPECT_FLOAT_EQ(span[1], 2.0f);
   EXPECT_FLOAT_EQ(span[2], 3.0f);
   EXPECT_FLOAT_EQ(span[3], 4.0f);
+  span[1] = 9.0f;
+  EXPECT_FLOAT_EQ(span[1], 9.0f);
 }
 
 TEST(OrtValueConversionTest, BorrowTensorFromOrtValueCreatesView)
@@ -80,13 +82,40 @@ TEST(OrtValueConversionTest, BorrowTensorFromOrtValueCreatesView)
   EXPECT_EQ(tensor.data_type(), DataType::kInt64);
   EXPECT_EQ(tensor.shape(), std::vector<int64_t>({3}));
   EXPECT_EQ(tensor.raw_data(), values.data());
+  EXPECT_TRUE(tensor.buffer().is_mutable());
 
-  const Tensor & tensor_const = tensor;
-  const auto span = tensor_const.span<int64_t>();
+  auto span = tensor.span<int64_t>();
   ASSERT_EQ(span.size(), 3u);
   EXPECT_EQ(span[0], 5);
   EXPECT_EQ(span[1], 6);
   EXPECT_EQ(span[2], 7);
+  span[0] = 10;
+  EXPECT_EQ(values[0], 10);
+}
+
+TEST(OrtValueConversionTest, BorrowTensorFromConstOrtValueCreatesReadOnlyView)
+{
+  std::vector<int64_t> values = {5, 6, 7};
+  std::vector<int64_t> shape = {3};
+  auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  auto ort_value = Ort::Value::CreateTensor<int64_t>(
+    memory_info,
+    values.data(),
+    values.size(),
+    shape.data(),
+    shape.size());
+
+  const Ort::Value & ort_value_const = ort_value;
+  auto tensor = borrow_tensor_from_ort_value(ort_value_const);
+
+  EXPECT_FALSE(tensor.buffer().is_mutable());
+  const Tensor & tensor_const = tensor;
+  const auto span = tensor_const.span<int64_t>();
+  ASSERT_EQ(span.size(), 3u);
+  EXPECT_EQ(span[0], 5);
+  EXPECT_THROW(
+    static_cast<void>(tensor.span<int64_t>()),
+    std::runtime_error);
 }
 
 TEST(OrtValueConversionTest, ImmutableTensorCannotBeWrappedForOrtZeroCopy)

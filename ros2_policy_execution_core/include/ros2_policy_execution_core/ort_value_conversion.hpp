@@ -128,12 +128,12 @@ inline OrtValueReference make_ort_value_reference(Tensor & tensor)
 }
 
 /**
- * @brief Create a non-owning tensor view over an `Ort::Value`.
+ * @brief Create a non-owning read-only tensor view over an `Ort::Value`.
  *
  * The caller must keep the `Ort::Value` alive while using the returned tensor.
  *
  * @param[in] value ONNX Runtime tensor value.
- * @return Tensor view over the existing payload.
+ * @return Read-only tensor view over the existing payload.
  */
 inline Tensor borrow_tensor_from_ort_value(const Ort::Value & value)
 {
@@ -156,6 +156,38 @@ inline Tensor borrow_tensor_from_ort_value(const Ort::Value & value)
     from_onnx_data_type(shape_info.GetElementType()),
     shape_info.GetShape(),
     SharedBuffer(value.GetTensorRawData(), value.GetTensorSizeInBytes()),
+    device);
+}
+
+/**
+ * @brief Create a non-owning mutable tensor view over an `Ort::Value`.
+ *
+ * The caller must keep the `Ort::Value` alive while using the returned tensor.
+ *
+ * @param[in] value Mutable ONNX Runtime tensor value.
+ * @return Mutable tensor view over the existing payload.
+ */
+inline Tensor borrow_tensor_from_ort_value(Ort::Value & value)
+{
+  if (!value.IsTensor()) {
+    throw std::invalid_argument("Only dense ONNX Runtime tensors are supported.");
+  }
+
+  const auto shape_info = value.GetTensorTypeAndShapeInfo();
+  const auto memory_info = value.GetTensorMemoryInfo();
+  const auto device_type = memory_info.GetDeviceType();
+  if (device_type != OrtMemoryInfoDeviceType_CPU) {
+    throw std::invalid_argument("v1 only supports ONNX Runtime tensors in CPU memory.");
+  }
+
+  Device device;
+  device.type = DeviceType::kCpu;
+  device.device_id = memory_info.GetDeviceId();
+
+  return Tensor(
+    from_onnx_data_type(shape_info.GetElementType()),
+    shape_info.GetShape(),
+    SharedBuffer(value.GetTensorMutableRawData(), value.GetTensorSizeInBytes()),
     device);
 }
 
@@ -189,7 +221,7 @@ inline Tensor tensor_from_ort_value(Ort::Value value)
   return Tensor(
     from_onnx_data_type(shape_info.GetElementType()),
     shape_info.GetShape(),
-    SharedBuffer(owner->GetTensorRawData(), owner->GetTensorSizeInBytes(), owner),
+    SharedBuffer(owner->GetTensorMutableRawData(), owner->GetTensorSizeInBytes(), owner),
     device);
 }
 
@@ -226,7 +258,7 @@ inline Tensor tensor_from_ort_value(OrtValueReference reference)
     from_onnx_data_type(shape_info.GetElementType()),
     shape_info.GetShape(),
     SharedBuffer(
-      owner->value.GetTensorRawData(),
+      owner->value.GetTensorMutableRawData(),
       owner->value.GetTensorSizeInBytes(),
       owner),
     device);
