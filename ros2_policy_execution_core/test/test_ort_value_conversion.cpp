@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -26,7 +27,7 @@ TEST(OrtValueConversionTest, TensorToOrtValueReusesPayloadBuffer)
 {
   auto values = std::make_shared<std::vector<float>>(
     std::initializer_list<float>{1.0f, 2.0f, 3.0f, 4.0f});
-  const auto tensor = Tensor::share_vector(values, {2, 2});
+  auto tensor = Tensor::share_vector(values, {2, 2});
 
   auto ort_reference = make_ort_value_reference(tensor);
 
@@ -43,7 +44,7 @@ TEST(OrtValueConversionTest, TensorOrtRoundTripPreservesShapeAndValuesWithoutCop
 {
   auto values = std::make_shared<std::vector<float>>(
     std::initializer_list<float>{1.0f, 2.0f, 3.0f, 4.0f});
-  const auto tensor = Tensor::share_vector(values, {2, 2});
+  auto tensor = Tensor::share_vector(values, {2, 2});
 
   auto ort_reference = make_ort_value_reference(tensor);
   auto round_trip = tensor_from_ort_value(std::move(ort_reference));
@@ -53,7 +54,8 @@ TEST(OrtValueConversionTest, TensorOrtRoundTripPreservesShapeAndValuesWithoutCop
   EXPECT_EQ(round_trip.shape(), std::vector<int64_t>({2, 2}));
   EXPECT_EQ(round_trip.raw_data(), tensor.raw_data());
 
-  const auto span = round_trip.span<float>();
+  const Tensor & round_trip_const = round_trip;
+  const auto span = round_trip_const.span<float>();
   ASSERT_EQ(span.size(), 4u);
   EXPECT_FLOAT_EQ(span[0], 1.0f);
   EXPECT_FLOAT_EQ(span[1], 2.0f);
@@ -79,11 +81,23 @@ TEST(OrtValueConversionTest, BorrowTensorFromOrtValueCreatesView)
   EXPECT_EQ(tensor.shape(), std::vector<int64_t>({3}));
   EXPECT_EQ(tensor.raw_data(), values.data());
 
-  const auto span = tensor.span<int64_t>();
+  const Tensor & tensor_const = tensor;
+  const auto span = tensor_const.span<int64_t>();
   ASSERT_EQ(span.size(), 3u);
   EXPECT_EQ(span[0], 5);
   EXPECT_EQ(span[1], 6);
   EXPECT_EQ(span[2], 7);
+}
+
+TEST(OrtValueConversionTest, ImmutableTensorCannotBeWrappedForOrtZeroCopy)
+{
+  const std::array<float, 2> values = {1.0f, 2.0f};
+  Tensor tensor(
+    DataType::kFloat32,
+    {2},
+    SharedBuffer::borrow(values.data(), values.size()));
+
+  EXPECT_THROW(make_ort_value_reference(tensor), std::invalid_argument);
 }
 
 }  // namespace ros2_policy_execution_core

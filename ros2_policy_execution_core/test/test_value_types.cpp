@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <array>
 #include <memory>
 #include <string>
 #include <vector>
@@ -97,6 +98,27 @@ TEST(ValueTypesTest, ValueSetPreservesOrderAndLookup)
   EXPECT_EQ(image_value->as_tensor().data_type(), DataType::kUInt8);
 
   EXPECT_EQ(find_value(value_set, "missing"), nullptr);
+}
+
+TEST(ValueTypesTest, ImmutableBufferRejectsMutableAccess)
+{
+  const std::array<float, 3> values = {1.0f, 2.0f, 3.0f};
+  Tensor tensor(
+    DataType::kFloat32,
+    {3},
+    SharedBuffer::borrow(values.data(), values.size()));
+
+  EXPECT_FALSE(tensor.buffer().is_mutable());
+  EXPECT_THROW({static_cast<void>(tensor.mutable_raw_data());}, std::runtime_error);
+  EXPECT_THROW(
+    static_cast<void>(tensor.span<float>()),
+    std::runtime_error);
+}
+
+TEST(ValueTypesTest, AvailableBytesClampsInvalidOffset)
+{
+  Tensor tensor;
+  EXPECT_EQ(tensor.available_bytes(), 0u);
 }
 
 }  // namespace ros2_policy_execution_core

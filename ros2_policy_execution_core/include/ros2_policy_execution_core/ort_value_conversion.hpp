@@ -99,10 +99,10 @@ inline DataType from_onnx_data_type(const ONNXTensorElementDataType data_type)
  * @brief Wrap a dense CPU tensor as an `Ort::Value` without copying payload
  * bytes.
  *
- * @param[in] tensor Tensor to expose to ONNX Runtime.
+ * @param[in] tensor Mutable tensor to expose to ONNX Runtime.
  * @return Wrapper containing the `Ort::Value` and the storage lifetime anchor.
  */
-inline OrtValueReference make_ort_value_reference(const Tensor & tensor)
+inline OrtValueReference make_ort_value_reference(Tensor & tensor)
 {
   if (!tensor.is_contiguous()) {
     throw std::invalid_argument("ONNX Runtime conversion requires a contiguous tensor.");
@@ -110,11 +110,15 @@ inline OrtValueReference make_ort_value_reference(const Tensor & tensor)
   if (tensor.device().type != DeviceType::kCpu) {
     throw std::invalid_argument("v1 ONNX Runtime conversion only supports CPU tensors.");
   }
+  if (!tensor.buffer().is_mutable()) {
+    throw std::invalid_argument(
+            "ONNX Runtime zero-copy wrapping requires mutable tensor storage.");
+  }
 
   auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
   auto value = Ort::Value::CreateTensor(
     memory_info,
-    const_cast<void *>(tensor.raw_data()),
+    tensor.mutable_raw_data(),
     tensor.bytes(),
     tensor.shape().data(),
     tensor.shape().size(),

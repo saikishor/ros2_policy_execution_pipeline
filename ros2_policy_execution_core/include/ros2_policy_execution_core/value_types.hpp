@@ -172,7 +172,7 @@ public:
   SharedBuffer() = default;
 
   /**
-   * @brief Construct a buffer view over existing storage.
+   * @brief Construct a buffer view over mutable storage.
    *
    * The constructor stores its own `std::shared_ptr`. In the usual call pattern the
    * caller passes `owner`, not `std::move(owner)`, so the caller keeps its own shared
@@ -198,19 +198,56 @@ public:
    * @param[in] owner Optional lifetime anchor for shared or borrowed storage.
    */
   SharedBuffer(
+    void * data, std::size_t bytes,
+    std::shared_ptr<void> owner = {})
+  : owner_(std::move(owner)),
+    data_(static_cast<const std::byte *>(data)),
+    bytes_(bytes),
+    is_mutable_(true)
+  {}
+
+  /**
+   * @brief Construct a buffer view over read-only storage.
+   *
+   * This overload is for genuinely const input memory. Mutable accessors will
+   * reject such buffers at runtime.
+   *
+   * @param[in] data Start of the storage.
+   * @param[in] bytes Size of the storage in bytes.
+   * @param[in] owner Optional lifetime anchor for shared or borrowed storage.
+   */
+  SharedBuffer(
     const void * data, std::size_t bytes,
     std::shared_ptr<const void> owner = {})
   : owner_(std::move(owner)),
     data_(static_cast<const std::byte *>(data)),
-    bytes_(bytes)
+    bytes_(bytes),
+    is_mutable_(false)
   {}
 
   /**
-   * @brief Create a buffer that borrows a typed memory range.
+   * @brief Create a buffer that borrows a mutable typed memory range.
    *
    * Note: "Borrow" means the buffer does not allocate or copy the bytes. It only
    * stores the pointer and, optionally, a shared owner that guarantees the
    * pointed-to memory remains valid.
+   *
+   * @tparam T Element type.
+   * @param[in] data Start of the typed storage.
+   * @param[in] count Number of elements.
+   * @param[in] owner Optional lifetime anchor.
+   * @return Buffer view covering the provided range.
+   */
+  template<typename T, typename = std::enable_if_t<!std::is_const_v<T>>>
+  static SharedBuffer borrow(
+    T * data, const std::size_t count,
+    std::shared_ptr<void> owner = {})
+  {
+    return SharedBuffer(data, count * sizeof(T), std::move(owner));
+  }
+
+  /**
+   * @brief Create a buffer that borrows a read-only typed memory range.
    *
    * @tparam T Element type.
    * @param[in] data Start of the typed storage.
@@ -244,17 +281,44 @@ public:
       throw std::invalid_argument("Cannot build a SharedBuffer from a null vector.");
     }
     if (values->empty()) {
-      return SharedBuffer(nullptr, 0, values);
+      return SharedBuffer(
+        static_cast<void *>(nullptr), 0, std::static_pointer_cast<void>(values));
     }
-    return SharedBuffer(values->data(), values->size() * sizeof(T), values);
+    return SharedBuffer(
+      values->data(),
+      values->size() * sizeof(T),
+      std::static_pointer_cast<void>(values));
   }
 
   /**
-   * @brief Create a buffer view over shared storage described by another owner.
+   * @brief Create a buffer view over mutable shared storage described by another owner.
    *
    * Note: This is useful when the bytes live inside a larger object, such as a ROS
    * message. The buffer aliases the payload pointer but keeps the whole message
    * alive through the shared owner.
+   *
+   * @tparam OwnerT Shared owner type.
+   * @param[in] owner Shared object that keeps the storage alive.
+   * @param[in] data Start of the storage.
+   * @param[in] bytes Size of the storage in bytes.
+   * @return Buffer view covering the provided range.
+   */
+  template<typename OwnerT>
+  static SharedBuffer alias(
+    const std::shared_ptr<OwnerT> & owner,
+    void * data, const std::size_t bytes)
+  {
+    if (!owner) {
+      throw std::invalid_argument("Cannot alias a null owner.");
+    }
+    return SharedBuffer(
+      data,
+      bytes,
+      std::static_pointer_cast<void>(owner));
+  }
+
+  /**
+   * @brief Create a buffer view over read-only shared storage described by another owner.
    *
    * @tparam OwnerT Shared owner type.
    * @param[in] owner Shared object that keeps the storage alive.
@@ -293,7 +357,20 @@ public:
    */
   [[nodiscard]] void * mutable_data()
   {
+    if (!is_mutable_) {
+      throw std::runtime_error("Cannot request mutable data from an immutable SharedBuffer.");
+    }
     return const_cast<std::byte *>(data_);
+  }
+
+  /**
+   * @brief Return whether the underlying storage may be accessed mutably.
+   *
+   * @return `true` when the buffer wraps mutable storage.
+   */
+  [[nodiscard]] bool is_mutable() const
+  {
+    return is_mutable_;
   }
 
   /**
@@ -330,6 +407,7 @@ private:
   std::shared_ptr<const void> owner_ = {};
   const std::byte * data_ = nullptr;
   std::size_t bytes_ = 0;
+  bool is_mutable_ = false;
 };
 
 /**
@@ -511,6 +589,9 @@ public:
    */
   [[nodiscard]] std::size_t available_bytes() const
   {
+    if (byte_offset_ > buffer_.bytes()) {
+      return 0;
+    }
     return buffer_.bytes() - byte_offset_;
   }
 

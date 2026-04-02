@@ -56,8 +56,9 @@ int run_example()
   auto round_trip = tensor_from_ort_value(std::move(ort_reference));
   observations.reset();
 
+  const Tensor & round_trip_const = round_trip;
   std::cout << "Round-trip values:";
-  for (const auto value : round_trip.span<float>()) {
+  for (const auto value : round_trip_const.span<float>()) {
     std::cout << ' ' << value;
   }
   std::cout << '\n';
