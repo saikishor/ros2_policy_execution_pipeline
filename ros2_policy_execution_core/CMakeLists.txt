@@ -1,22 +1,85 @@
 cmake_minimum_required(VERSION 3.8)
 project(ros2_policy_execution_core)
 
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW)
+endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+option(ROS2_POLICY_EXECUTION_CORE_BUILD_EXAMPLES "Build example executables" ON)
+
 # find dependencies
 find_package(ament_cmake REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+set(
+  ONNXRUNTIME_ROOT
+  "/opt/onnxruntime"
+  CACHE PATH
+  "Root directory of the ONNX Runtime installation"
+)
+
+find_package(ONNXRUNTIME QUIET)
+
+set(HAVE_ONNXRUNTIME FALSE)
+if(ONNXRUNTIME_FOUND)
+  set(HAVE_ONNXRUNTIME TRUE)
+else()
+  message(WARNING "ONNX Runtime was not found. ORT examples and tests will be skipped.")
+endif()
 
 add_library(${PROJECT_NAME} INTERFACE)
 target_include_directories(${PROJECT_NAME} INTERFACE
   "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
   "$<INSTALL_INTERFACE:include/${PROJECT_NAME}>")
+target_compile_features(${PROJECT_NAME} INTERFACE cxx_std_20)
 target_link_libraries(${PROJECT_NAME} INTERFACE
   pluginlib::pluginlib
   rclcpp::rclcpp)
+
+if(ROS2_POLICY_EXECUTION_CORE_BUILD_EXAMPLES)
+  add_executable(
+    ros2_preprocessor_value_example
+    examples/ros2_preprocessor_value_example.cpp
+  )
+  target_link_libraries(ros2_preprocessor_value_example ${PROJECT_NAME})
+  ament_target_dependencies(
+    ros2_preprocessor_value_example
+    geometry_msgs
+    rclcpp
+    sensor_msgs
+  )
+
+  install(
+    TARGETS ros2_preprocessor_value_example
+    DESTINATION lib/${PROJECT_NAME}
+  )
+
+  if(HAVE_ONNXRUNTIME)
+    add_executable(
+      value_types_basic_example
+      examples/value_types_basic_example.cpp
+    )
+    target_link_libraries(
+      value_types_basic_example
+      ${PROJECT_NAME}
+      ONNXRUNTIME::ONNXRUNTIME
+    )
+
+    install(
+      TARGETS value_types_basic_example
+      DESTINATION lib/${PROJECT_NAME}
+    )
+  endif()
+endif()
 
 install(
   DIRECTORY include/
@@ -43,7 +106,30 @@ if(BUILD_TESTING)
   target_link_libraries(test_preprocessor
     ${PROJECT_NAME}
   )
+
+  ament_add_gmock(test_value_types
+    test/test_value_types.cpp
+  )
+  target_link_libraries(test_value_types
+    ${PROJECT_NAME}
+  )
+
+  if(HAVE_ONNXRUNTIME)
+    ament_add_gmock(test_ort_value_conversion
+      test/test_ort_value_conversion.cpp
+    )
+    target_link_libraries(
+      test_ort_value_conversion
+      ${PROJECT_NAME}
+      ONNXRUNTIME::ONNXRUNTIME
+    )
+  endif()
 endif()
+
+install(
+  DIRECTORY cmake/
+  DESTINATION share/${PROJECT_NAME}/cmake
+)
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(pluginlib rclcpp)
