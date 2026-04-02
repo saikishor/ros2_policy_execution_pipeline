@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.8)
 project(ros2_policy_execution_core)
 
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW)
+endif()
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -14,24 +18,20 @@ find_package(pluginlib REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 
-set(ONNXRUNTIME_ROOT "/opt/onnxruntime" CACHE PATH "Root directory of the ONNX Runtime installation")
-find_path(
-  ONNXRUNTIME_INCLUDE_DIR
-  NAMES onnxruntime_cxx_api.h
-  HINTS ${ONNXRUNTIME_ROOT}/include
-)
-find_library(
-  ONNXRUNTIME_LIBRARY
-  NAMES onnxruntime
-  HINTS ${ONNXRUNTIME_ROOT}/lib
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+
+set(
+  ONNXRUNTIME_ROOT
+  "/opt/onnxruntime"
+  CACHE PATH
+  "Root directory of the ONNX Runtime installation"
 )
 
+find_package(ONNXRUNTIME QUIET)
+
 set(HAVE_ONNXRUNTIME FALSE)
-if(ONNXRUNTIME_INCLUDE_DIR AND ONNXRUNTIME_LIBRARY)
+if(ONNXRUNTIME_FOUND)
   set(HAVE_ONNXRUNTIME TRUE)
-  add_library(onnxruntime_local INTERFACE)
-  target_include_directories(onnxruntime_local INTERFACE ${ONNXRUNTIME_INCLUDE_DIR})
-  target_link_libraries(onnxruntime_local INTERFACE ${ONNXRUNTIME_LIBRARY})
 else()
   message(WARNING "ONNX Runtime was not found. ORT examples and tests will be skipped.")
 endif()
@@ -71,7 +71,7 @@ if(ROS2_POLICY_EXECUTION_CORE_BUILD_EXAMPLES)
     target_link_libraries(
       value_types_basic_example
       ${PROJECT_NAME}
-      onnxruntime_local
+      ONNXRUNTIME::ONNXRUNTIME
     )
 
     install(
@@ -121,10 +121,15 @@ if(BUILD_TESTING)
     target_link_libraries(
       test_ort_value_conversion
       ${PROJECT_NAME}
-      onnxruntime_local
+      ONNXRUNTIME::ONNXRUNTIME
     )
   endif()
 endif()
+
+install(
+  DIRECTORY cmake/
+  DESTINATION share/${PROJECT_NAME}/cmake
+)
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(pluginlib rclcpp)
