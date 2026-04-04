@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <deque>
 #include <exception>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -29,6 +30,7 @@
 #include "rclcpp/time.hpp"
 
 #include "ros2_policy_execution_core/preprocessor_support.hpp"
+#include "ros2_policy_execution_core/tensor/named_value_list.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -84,13 +86,13 @@ public:
    * @brief Register an observation provider with a name.
    *
    * Providers are called in order of registration when build_observation() is invoked.
-   * The vectors returned by each provider are concatenated in registration order
+   * Each provider’s tensor payload (contiguous float32) is concatenated in registration order
    * to form the final observation vector.
    *
    * @param[in] name Unique name for this segment (used for debugging/introspection)
    * @param[in] observation_segment_names Names of the individual segments provided by this
    *  provider (used for debugging/introspection)
-   * @param[in] provider Function that returns a vector of floats for this segment
+   * @param[in] provider Function that returns `ObservationData` (tensor `Value`; see observation_data_from_floats)
    * @throws std::runtime_error if a provider with the same name already exists
    */
   void register_observation_provider(
@@ -114,6 +116,7 @@ public:
   virtual bool build_observation(const rclcpp::Time & current_time)
   {
     current_observation_.clear();
+    current_observation_named_value_list_.clear();
     observation_time_diffs_.clear();
     const auto & providers = provider_registry_.providers();
     const auto & segment_entries = provider_registry_.segment_names();
@@ -124,23 +127,41 @@ public:
       if (name != seg_entry.first) {
         throw std::runtime_error("Observation provider name does not match segment name entry.");
       }
-      if (data.values.empty()) {
-        throw std::runtime_error("Observation provider '" + name + "' returned an empty vector.");
-      }
       if (data.timestamp > current_time) {
         throw std::runtime_error(
                 "Observation provider '" + name + "' returned a timestamp in the future.");
       }
-      if (data.values.size() != seg_entry.second.size()) {
+      if (!data.value.is_tensor()) {
         throw std::runtime_error(
-                "Observation provider '" + name + "' returned a vector of size " +
-                std::to_string(data.values.size()) + " but expected " +
-                std::to_string(seg_entry.second.size()) + " based on the segment names.");
+                "Observation provider '" + name + "' returned a non-tensor value.");
       }
-      current_observation_.insert(
-        current_observation_.end(), data.values.begin(), data.values.end());
+      const Tensor & tensor = data.value.as_tensor();
+      if (tensor.data_type() != DataType::Float32) {
+        throw std::runtime_error(
+                "Observation provider '" + name +
+                "' tensor must be float32 for preprocessor concatenation.");
+      }
+      if (tensor.num_elements() == 0) {
+        throw std::runtime_error(
+                "Observation provider '" + name + "' returned an empty observation tensor.");
+      }
+      if (tensor.num_elements() != seg_entry.second.size()) {
+        throw std::runtime_error(
+                "Observation provider '" + name + "' tensor element count " +
+                std::to_string(tensor.num_elements()) + " does not match segment count " +
+                std::to_string(seg_entry.second.size()) + ".");
+      }
+      const auto span = tensor.span<float>();
+      current_observation_.insert(current_observation_.end(), span.begin(), span.end());
       observation_time_diffs_[name] = (current_time - data.timestamp).seconds();
     }
+
+    observation_flat_owner_ = std::make_shared<std::vector<float>>(current_observation_);
+    current_observation_named_value_list_.push_back(
+      {"observation",
+        Value(Tensor::share_vector(
+          observation_flat_owner_,
+          {static_cast<int64_t>(observation_flat_owner_->size())}))});
     return true;
   }
 
@@ -184,6 +205,17 @@ public:
   [[nodiscard]] virtual const std::vector<float> & get_observation() const
   {
     return current_observation_;
+  }
+
+  /**
+   * @brief Named tensor bundle for inference (includes `observation` float tensor).
+   *
+   * Populated by `build_observation()`. The `observation` entry is a rank-1 float tensor
+   * sharing storage with the concatenated `get_observation()` vector via an internal owner.
+   */
+  [[nodiscard]] const NamedValueList & get_observation_named_value_list() const
+  {
+    return current_observation_named_value_list_;
   }
 
   /**
@@ -233,6 +265,9 @@ public:
 private:
   /// Storage for the current observation vector
   std::vector<float> current_observation_ = {};
+  /// Shared owner for `get_observation_named_value_list()` tensor payload (updated each build).
+  std::shared_ptr<std::vector<float>> observation_flat_owner_ = {};
+  NamedValueList current_observation_named_value_list_ = {};
   ObservationProviderRegistry provider_registry_;
   HistoryManager history_manager_;
 

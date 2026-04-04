@@ -14,6 +14,7 @@
 //
 // Authors: Julia Jia
 
+#include <memory>
 #include <vector>
 
 #include "gtest/gtest.h"
@@ -47,8 +48,8 @@ TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndPara
   std::vector<float> v2 = {2.0f, 3.0f};
   rclcpp::Time t1(1, 0);
   rclcpp::Time t2(2, 0);
-  ObservationData d1{v1, t1};
-  ObservationData d2{v2, t2};
+  ObservationData d1 = observation_data_from_floats(v1, t1);
+  ObservationData d2 = observation_data_from_floats(v2, t2);
 
   registry.register_provider("p1", {"a"}, [&d1]() -> const ObservationData & {return d1;});
   registry.register_provider("p2", {"b", "c"}, [&d2]() -> const ObservationData & {return d2;});
@@ -67,9 +68,18 @@ TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndPara
   EXPECT_EQ(registry.segment_names()[1].second[0], "b");
   EXPECT_EQ(registry.segment_names()[1].second[1], "c");
 
-  EXPECT_FLOAT_EQ(registry.providers()[0].second().values[0], 1.0f);
-  ASSERT_EQ(registry.providers()[1].second().values.size(), 2u);
-  EXPECT_FLOAT_EQ(registry.providers()[1].second().values[0], 2.0f);
+  ASSERT_TRUE(registry.providers()[0].second().value.is_tensor());
+  {
+    const auto s = registry.providers()[0].second().value.as_tensor().span<float>();
+    ASSERT_EQ(s.size(), 1u);
+    EXPECT_FLOAT_EQ(s[0], 1.0f);
+  }
+  ASSERT_TRUE(registry.providers()[1].second().value.is_tensor());
+  {
+    const auto s = registry.providers()[1].second().value.as_tensor().span<float>();
+    ASSERT_EQ(s.size(), 2u);
+    EXPECT_FLOAT_EQ(s[0], 2.0f);
+  }
 }
 
 TEST(HistoryManagerTest, ObservationAndActionLengthsIndependent)
@@ -93,6 +103,13 @@ TEST(HistoryManagerTest, SetLengthsToZeroClearsBuffers)
   hm.set_lengths(0, 0);
   EXPECT_TRUE(hm.observations().empty());
   EXPECT_TRUE(hm.actions().empty());
+}
+
+TEST_F(PreprocessorSupportTest, ObservationData_FromFloatVectorNullThrows)
+{
+  std::shared_ptr<std::vector<float>> null_storage;
+  rclcpp::Time t(0, 0);
+  EXPECT_THROW(observation_data_from_float_vector(null_storage, t), std::invalid_argument);
 }
 
 }  // namespace ros2_policy_execution_core

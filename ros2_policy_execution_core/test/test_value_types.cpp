@@ -19,7 +19,9 @@
 
 #include "gtest/gtest.h"
 
-#include "ros2_policy_execution_core/value_types.hpp"
+// `NamedValueList` / `find_value` tests need this header; it pulls in `tensor/tensor_types.hpp`.
+// Dtype-only: `tensor/data_type.hpp`. Tensor / ByteBufferView: `tensor/tensor_types.hpp`.
+#include "ros2_policy_execution_core/tensor/named_value_list.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -62,9 +64,9 @@ TEST(ValueTypesTest, ByteOffsetCreatesSubviewWithoutCopy)
     std::initializer_list<float>{1.0f, 2.0f, 3.0f, 4.0f});
 
   Tensor tensor(
-    DataType::kFloat32,
+    DataType::Float32,
     {2},
-    SharedBuffer::share_vector(values),
+    ByteBufferView::share_vector(values),
     {},
     {},
     2 * sizeof(float));
@@ -76,37 +78,37 @@ TEST(ValueTypesTest, ByteOffsetCreatesSubviewWithoutCopy)
   EXPECT_EQ(tensor.raw_data(), values->data() + 2);
 }
 
-TEST(ValueTypesTest, ValueSetPreservesOrderAndLookup)
+TEST(ValueTypesTest, NamedValueListPreservesOrderAndLookup)
 {
   auto image_values = std::make_shared<std::vector<uint8_t>>(
     std::initializer_list<uint8_t>{1, 2, 3});
   auto pose_values = std::make_shared<std::vector<double>>(
     std::initializer_list<double>{0.1, 0.2, 0.3});
 
-  ValueSet value_set = {
+  NamedValueList inputs = {
     {"image", Value(Tensor::share_vector(image_values, {3}))},
     {"pose", Value(Tensor::share_vector(pose_values, {3}))}
   };
 
-  ASSERT_EQ(value_set.size(), 2u);
-  EXPECT_EQ(value_set[0].name, "image");
-  EXPECT_EQ(value_set[1].name, "pose");
+  ASSERT_EQ(inputs.size(), 2u);
+  EXPECT_EQ(inputs[0].name, "image");
+  EXPECT_EQ(inputs[1].name, "pose");
 
-  const auto * image_value = find_value(value_set, "image");
+  const auto * image_value = find_value(inputs, "image");
   ASSERT_NE(image_value, nullptr);
   ASSERT_TRUE(image_value->is_tensor());
-  EXPECT_EQ(image_value->as_tensor().data_type(), DataType::kUInt8);
+  EXPECT_EQ(image_value->as_tensor().data_type(), DataType::UInt8);
 
-  EXPECT_EQ(find_value(value_set, "missing"), nullptr);
+  EXPECT_EQ(find_value(inputs, "missing"), nullptr);
 }
 
 TEST(ValueTypesTest, ImmutableBufferRejectsMutableAccess)
 {
   const std::array<float, 3> values = {1.0f, 2.0f, 3.0f};
   Tensor tensor(
-    DataType::kFloat32,
+    DataType::Float32,
     {3},
-    SharedBuffer::borrow(values.data(), values.size()));
+    ByteBufferView::borrow(values.data(), values.size()));
 
   EXPECT_FALSE(tensor.buffer().is_mutable());
   EXPECT_THROW({static_cast<void>(tensor.mutable_raw_data());}, std::runtime_error);
@@ -119,6 +121,38 @@ TEST(ValueTypesTest, AvailableBytesClampsInvalidOffset)
 {
   Tensor tensor;
   EXPECT_EQ(tensor.available_bytes(), 0u);
+}
+
+TEST(ValueTypesTest, DataTypeForElementMapsScalars)
+{
+  EXPECT_EQ(data_type_v<float>, DataType::Float32);
+  EXPECT_EQ(data_type_v<double>, DataType::Float64);
+  EXPECT_EQ(data_type_v<int32_t>, DataType::Int32);
+  EXPECT_EQ(data_type_v<uint8_t>, DataType::UInt8);
+}
+
+TEST(ValueTypesTest, DataTypeSizeIsZeroForUnknown)
+{
+  EXPECT_EQ(data_type_size(DataType::Unknown), 0u);
+  EXPECT_EQ(data_type_size(DataType::Float32), sizeof(float));
+}
+
+TEST(ValueTypesTest, ValueEmptyKindIsNotTensor)
+{
+  Value v;
+  EXPECT_EQ(v.kind(), Value::Kind::kEmpty);
+  EXPECT_FALSE(v.is_tensor());
+}
+
+TEST(ValueTypesTest, FindValueMutableOverloadReplacesEntry)
+{
+  NamedValueList list{{"x", Value()}};
+  Value * pv = find_value(list, "x");
+  ASSERT_NE(pv, nullptr);
+  auto storage = std::make_shared<std::vector<float>>(std::vector<float>{9.0f});
+  *pv = Value(Tensor::share_vector(storage, {1}));
+  ASSERT_TRUE(list[0].value.is_tensor());
+  EXPECT_FLOAT_EQ(list[0].value.as_tensor().span<float>()[0], 9.0f);
 }
 
 }  // namespace ros2_policy_execution_core

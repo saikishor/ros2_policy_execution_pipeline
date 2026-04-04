@@ -17,9 +17,9 @@
 #ifndef ROS2_POLICY_EXECUTION_CORE__INFERENCE_CORE_HPP_
 #define ROS2_POLICY_EXECUTION_CORE__INFERENCE_CORE_HPP_
 
-#include <vector>
-
 #include "rclcpp/node.hpp"
+
+#include "ros2_policy_execution_core/tensor/named_value_list.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -50,16 +50,16 @@ public:
   virtual void configure(const rclcpp::Node::SharedPtr & node) = 0;
 
   /**
-   * @brief Run inference on the given observations and produce outputs.
+   * @brief Run inference on named tensor inputs and populate named outputs.
    *
-   * This pure virtual method must be implemented by derived classes to perform
-   * the actual inference computation using the loaded policy model.
+   * The default preprocessor supplies one tensor, usually named `observation`
+   * (`PreprocessorCore::get_observation_named_value_list()`). Models may require other names.
    *
-   * @param[in] obs The observation vector to use as input for inference.
-   * @param[out] output The output vector that will be populated with the inference results.
+   * @param[in] inputs Ordered named tensors (and future value kinds) for the model.
+   * @param[out] outputs Populated by the implementation on success.
    * @return true if inference was successful, false otherwise.
    */
-  virtual bool run_inference(const std::vector<float> & obs, std::vector<float> & output) = 0;
+  virtual bool run_inference(const NamedValueList & inputs, NamedValueList & outputs) = 0;
 };
 
 }  // namespace ros2_policy_execution_core

@@ -19,6 +19,7 @@
 
 #include <deque>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -26,19 +27,56 @@
 
 #include "rclcpp/time.hpp"
 
+#include "ros2_policy_execution_core/tensor/named_value_list.hpp"
+
 namespace ros2_policy_execution_core
 {
 
 /**
- * @brief Data returned by an observation provider.
+ * @brief Data returned by an observation provider: timestamp and one tensor observation payload.
  *
- * Contains both the observation values and an optional timestamp.
+ * The `Value` must hold a contiguous `DataType::Float32` `Tensor` with one element per registered
+ * segment name for that provider. Use observation_data_from_float_vector() or
+ * observation_data_from_floats() when the source data is a `std::vector<float>`.
  */
 struct ObservationData
 {
-  const std::vector<float> & values;  ///< Reference to observation values
-  rclcpp::Time timestamp;              ///< Timestamp of the observation data
+  ObservationData(Value observation_value, rclcpp::Time time)
+  : timestamp(std::move(time)), value(std::move(observation_value)) {}
+
+  rclcpp::Time timestamp;
+  Value value;
 };
+
+/**
+ * @brief Builds `ObservationData` from floats owned by a shared vector (no extra copy of elements).
+ * @param[in] floats Non-null shared vector; element count must match the provider’s segment list.
+ * @param[in] timestamp Sample time for this observation.
+ */
+inline ObservationData observation_data_from_float_vector(
+  const std::shared_ptr<std::vector<float>> & floats,
+  rclcpp::Time timestamp)
+{
+  if (!floats) {
+    throw std::invalid_argument("observation_data_from_float_vector: floats must not be null.");
+  }
+  return ObservationData(
+    Value(Tensor::share_vector(floats, {static_cast<int64_t>(floats->size())})),
+    std::move(timestamp));
+}
+
+/**
+ * @brief Builds `ObservationData` by moving floats into shared storage, then wrapping as a tensor.
+ * @param[in] floats Observation elements; moved into a new `std::shared_ptr<std::vector<float>>`.
+ * @param[in] timestamp Sample time for this observation.
+ */
+inline ObservationData observation_data_from_floats(
+  std::vector<float> floats,
+  rclcpp::Time timestamp)
+{
+  auto storage = std::make_shared<std::vector<float>>(std::move(floats));
+  return observation_data_from_float_vector(storage, std::move(timestamp));
+}
 
 /**
  * @brief Registry for observation providers and their segment names.

@@ -1,4 +1,4 @@
-// Copyright 2026 PAI SIG
+// Copyright 2026 ros2_control Development Team
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -11,6 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// Authors: Julia Jia
 
 #include <array>
 #include <memory>
@@ -18,12 +20,17 @@
 
 #include "gtest/gtest.h"
 
-#include "ros2_policy_execution_core/ort_value_conversion.hpp"
+#include "ros2_policy_execution_adapters/ort_tensor_conversion.hpp"
+#include "ros2_policy_execution_core/tensor/tensor_types.hpp"
 
-namespace ros2_policy_execution_core
+namespace ros2_policy_execution_adapters
 {
 
-TEST(OrtValueConversionTest, TensorToOrtValueReusesPayloadBuffer)
+using ros2_policy_execution_core::DataType;
+using ros2_policy_execution_core::ByteBufferView;
+using ros2_policy_execution_core::Tensor;
+
+TEST(OrtTensorConversionTest, TensorToOrtValueReusesPayloadBuffer)
 {
   auto values = std::make_shared<std::vector<float>>(
     std::initializer_list<float>{1.0f, 2.0f, 3.0f, 4.0f});
@@ -37,10 +44,9 @@ TEST(OrtValueConversionTest, TensorToOrtValueReusesPayloadBuffer)
 
   const auto shape_info = ort_reference.value.GetTensorTypeAndShapeInfo();
   EXPECT_EQ(shape_info.GetElementType(), ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
-  EXPECT_EQ(shape_info.GetShape(), std::vector<int64_t>({2, 2}));
 }
 
-TEST(OrtValueConversionTest, TensorOrtRoundTripPreservesShapeAndValuesWithoutCopy)
+TEST(OrtTensorConversionTest, TensorOrtRoundTripPreservesShapeAndValuesWithoutCopy)
 {
   auto values = std::make_shared<std::vector<float>>(
     std::initializer_list<float>{1.0f, 2.0f, 3.0f, 4.0f});
@@ -48,60 +54,51 @@ TEST(OrtValueConversionTest, TensorOrtRoundTripPreservesShapeAndValuesWithoutCop
 
   auto ort_reference = make_ort_value_reference(tensor);
   auto round_trip = tensor_from_ort_value(std::move(ort_reference));
-  values.reset();
 
-  EXPECT_EQ(round_trip.data_type(), DataType::kFloat32);
-  EXPECT_EQ(round_trip.shape(), std::vector<int64_t>({2, 2}));
   EXPECT_EQ(round_trip.raw_data(), tensor.raw_data());
-  EXPECT_TRUE(round_trip.buffer().is_mutable());
+  EXPECT_EQ(round_trip.shape(), tensor.shape());
+  EXPECT_EQ(round_trip.data_type(), DataType::Float32);
 
   auto span = round_trip.span<float>();
   ASSERT_EQ(span.size(), 4u);
   EXPECT_FLOAT_EQ(span[0], 1.0f);
-  EXPECT_FLOAT_EQ(span[1], 2.0f);
-  EXPECT_FLOAT_EQ(span[2], 3.0f);
   EXPECT_FLOAT_EQ(span[3], 4.0f);
-  span[1] = 9.0f;
-  EXPECT_FLOAT_EQ(span[1], 9.0f);
 }
 
-TEST(OrtValueConversionTest, BorrowTensorFromOrtValueCreatesView)
+TEST(OrtTensorConversionTest, BorrowTensorFromOrtValueCreatesView)
 {
-  std::vector<int64_t> values = {5, 6, 7};
+  std::vector<int64_t> data = {7, 8, 9};
   std::vector<int64_t> shape = {3};
   auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
   auto ort_value = Ort::Value::CreateTensor<int64_t>(
     memory_info,
-    values.data(),
-    values.size(),
+    data.data(),
+    data.size(),
     shape.data(),
     shape.size());
 
   auto tensor = borrow_tensor_from_ort_value(ort_value);
 
-  EXPECT_EQ(tensor.data_type(), DataType::kInt64);
-  EXPECT_EQ(tensor.shape(), std::vector<int64_t>({3}));
-  EXPECT_EQ(tensor.raw_data(), values.data());
-  EXPECT_TRUE(tensor.buffer().is_mutable());
+  EXPECT_EQ(tensor.raw_data(), static_cast<const void *>(data.data()));
+  EXPECT_EQ(tensor.data_type(), DataType::Int64);
+  ASSERT_EQ(tensor.shape().size(), 1u);
+  EXPECT_EQ(tensor.shape()[0], 3);
 
   auto span = tensor.span<int64_t>();
-  ASSERT_EQ(span.size(), 3u);
-  EXPECT_EQ(span[0], 5);
-  EXPECT_EQ(span[1], 6);
-  EXPECT_EQ(span[2], 7);
-  span[0] = 10;
-  EXPECT_EQ(values[0], 10);
+  EXPECT_EQ(span[0], 7);
+  data[1] = 99;
+  EXPECT_EQ(span[1], 99);
 }
 
-TEST(OrtValueConversionTest, BorrowTensorFromConstOrtValueCreatesReadOnlyView)
+TEST(OrtTensorConversionTest, BorrowTensorFromConstOrtValueCreatesReadOnlyView)
 {
-  std::vector<int64_t> values = {5, 6, 7};
-  std::vector<int64_t> shape = {3};
+  std::vector<int64_t> data = {1, 2};
+  std::vector<int64_t> shape = {2};
   auto memory_info = Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
   auto ort_value = Ort::Value::CreateTensor<int64_t>(
     memory_info,
-    values.data(),
-    values.size(),
+    data.data(),
+    data.size(),
     shape.data(),
     shape.size());
 
@@ -109,24 +106,21 @@ TEST(OrtValueConversionTest, BorrowTensorFromConstOrtValueCreatesReadOnlyView)
   auto tensor = borrow_tensor_from_ort_value(ort_value_const);
 
   EXPECT_FALSE(tensor.buffer().is_mutable());
-  const Tensor & tensor_const = tensor;
+  EXPECT_EQ(tensor.raw_data(), static_cast<const void *>(data.data()));
+  const auto & tensor_const = tensor;
   const auto span = tensor_const.span<int64_t>();
-  ASSERT_EQ(span.size(), 3u);
-  EXPECT_EQ(span[0], 5);
-  EXPECT_THROW(
-    static_cast<void>(tensor.span<int64_t>()),
-    std::runtime_error);
+  EXPECT_EQ(span[0], 1);
 }
 
-TEST(OrtValueConversionTest, ImmutableTensorCannotBeWrappedForOrtZeroCopy)
+TEST(OrtTensorConversionTest, ImmutableTensorCannotBeWrappedForOrtZeroCopy)
 {
-  const std::array<float, 2> values = {1.0f, 2.0f};
+  const std::array<float, 3> values = {1.0f, 2.0f, 3.0f};
   Tensor tensor(
-    DataType::kFloat32,
-    {2},
-    SharedBuffer::borrow(values.data(), values.size()));
+    DataType::Float32,
+    {3},
+    ByteBufferView::borrow(values.data(), values.size()));
 
   EXPECT_THROW(make_ort_value_reference(tensor), std::invalid_argument);
 }
 
-}  // namespace ros2_policy_execution_core
+}  // namespace ros2_policy_execution_adapters

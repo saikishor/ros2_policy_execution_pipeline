@@ -17,9 +17,9 @@
 #ifndef ROS2_POLICY_EXECUTION_CORE__POSTPROCESSOR_CORE_HPP_
 #define ROS2_POLICY_EXECUTION_CORE__POSTPROCESSOR_CORE_HPP_
 
-#include <vector>
-
 #include "rclcpp/node.hpp"
+
+#include "ros2_policy_execution_core/tensor/named_value_list.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -50,16 +50,12 @@ public:
   virtual void configure(const rclcpp::Node::SharedPtr & node) = 0;
 
   /**
-   * @brief Process the inference output and return the final commands.
+   * @brief Process inference outputs and return final command tensors (or other values).
    *
-   * This pure virtual method must be implemented by derived classes to perform
-   * the final postprocessing on the inference output and produce the commands to be sent.
-   *
-   * @param[in] inference_output The output vector from inference to be postprocessed.
-   * @return The final commands vector to be sent.
+   * @param[in] inference_output Values produced by `InferenceCore::run_inference`.
+   * @return Postprocessed values (for example a float tensor of joint commands).
    */
-  virtual [[nodiscard]] const std::vector<float> & process(
-    const std::vector<float> & inference_output) = 0;
+  [[nodiscard]] virtual NamedValueList process(const NamedValueList & inference_output) = 0;
 };
 
 }  // namespace ros2_policy_execution_core

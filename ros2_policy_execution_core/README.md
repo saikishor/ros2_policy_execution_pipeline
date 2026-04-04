@@ -40,18 +40,22 @@ Abstract base class for action postprocessing. Implement this to apply scaling, 
 
 Register callbacks that provide observation data. Providers are called in registration order, and their outputs are concatenated to form the final observation vector.
 
-### ObservationData Structure
+### ObservationData
 
-Providers return `ObservationData` containing:
-- `values`: const reference to the observation vector
-- `timestamp`: `rclcpp::Time` when the data was captured
+Providers return `ObservationData`: a timestamp and a `Value` holding a contiguous `DataType::Float32` tensor
+with one element per registered segment name. Helpers avoid duplicating the vector-to-tensor wiring:
 
 ```cpp
-struct ObservationData
-{
-  const std::vector<double>& values;
-  rclcpp::Time timestamp;
-};
+// Owns floats in a new shared vector (copies or moves from a temporary vector).
+ObservationData d1 = observation_data_from_floats({1.0f, 2.0f}, stamp);
+
+// Reuses existing shared vector storage (no copy of elements).
+auto storage = std::make_shared<std::vector<float>>(...);
+ObservationData d2 = observation_data_from_float_vector(storage, stamp);
+
+// Same transport type as inference I/O: build Value / Tensor directly when already in tensor form.
+Value v(Tensor::share_vector(storage, {static_cast<int64_t>(storage->size())}));
+ObservationData d3(v, stamp);
 ```
 
 ### History Management
@@ -78,18 +82,22 @@ const auto& action_history = preprocessor.get_action_history();
 The package now also provides a backend-agnostic transport type for future preprocessors,
 inference backends, and postprocessors.
 
-The core types live in `value_types.hpp`:
+Headers are layered so you can depend only on what you need (see [developer guide](../doc/developer_guide.md) at repository root):
 
-- `SharedBuffer`: pointer + byte count + optional shared owner
-- `Tensor`: dense tensor metadata plus a view into a `SharedBuffer`
+- `tensor/data_type.hpp` — `DataType`, `DataTypeForElement`, `data_type_v`, `data_type_size`
+- `tensor/tensor_device.hpp` — `Device` / `DeviceType`
+- `tensor/tensor_types.hpp` — `ByteBufferView`, `Tensor` (includes `data_type.hpp`)
+- `tensor/named_value_list.hpp` — `Value`, `NamedValue`, `NamedValueList`, `find_value`
+- `tensor/value_types.hpp` — umbrella that includes all of the above
+
+Each path is included as `ros2_policy_execution_core/tensor/...`.
+
+The important ownership idea is unchanged:
+
+- `ByteBufferView`: non-owning `(data, bytes)` plus optional `shared_ptr` anchor for lifetime
+- `Tensor`: dense tensor metadata plus a `ByteBufferView` into the payload bytes
 - `Value`: extensible wrapper around a `Tensor`
-- `NamedValue` / `ValueSet`: ordered named inputs and outputs
-
-The important ownership idea is:
-
-- the tensor does not need to own the payload bytes itself
-- it may instead borrow a pointer to bytes owned by something else
-- the optional `owner` field keeps that external object alive
+- `NamedValue` / `NamedValueList`: ordered named inputs and outputs
 
 That means a preprocessor can often wrap existing memory directly, for example:
 
@@ -99,11 +107,11 @@ That means a preprocessor can often wrap existing memory directly, for example:
 
 without copying the payload again.
 
-ONNX Runtime interop lives separately in `ort_value_conversion.hpp`.
-For dense CPU tensors, the conversion layer can wrap the same payload bytes as an `Ort::Value`
-when ONNX Runtime allows caller-owned buffers.
+Inference adapters (ONNX Runtime, TensorRT, OpenVINO, TFLite, etc.) are intentionally **not**
+part of this package; add them in a separate package that depends on these headers. See
+[`doc/developer_guide.md`](../doc/developer_guide.md) at repository root.
 
-#### `SharedBuffer` Construction Example
+#### `ByteBufferView` construction example
 
 The most common pattern is to keep the original `std::shared_ptr` in the caller and let the
 buffer store another shared handle to the same payload:
@@ -112,7 +120,7 @@ buffer store another shared handle to the same payload:
 auto values = std::make_shared<std::vector<float>>(
   std::initializer_list<float>{1.0f, 2.0f, 3.0f});
 
-SharedBuffer buffer(values->data(), values->size() * sizeof(float), values);
+ByteBufferView buffer(values->data(), values->size() * sizeof(float), values);
 
 // `values` is still valid here.
 // `buffer.owner()` also keeps the same vector storage alive.
@@ -122,58 +130,19 @@ Only the smart-pointer handle is shared or moved, never the payload bytes themse
 If the caller uses `std::move(values)`, then the caller gives its handle to the buffer and
 `values` becomes empty.
 
-#### Examples
-
-Two small examples are provided in `examples/`:
-
-- `value_types_basic_example.cpp`
-  Shows how to wrap a shared vector as a `Tensor`, convert it to `Ort::Value`,
-  and convert it back without copying the payload.
-- `ros2_preprocessor_value_example.cpp`
-  Shows a ROS 2 node that subscribes to image and pose topics and condenses them into a
-  backend-agnostic `ValueSet`.
-
-Run the generic datatype + ONNX example with:
-
-```bash
-ros2 run ros2_policy_execution_core value_types_basic_example
-```
-
-Run the ROS 2 preprocessor-style example with:
-
-```bash
-ros2 run ros2_policy_execution_core ros2_preprocessor_value_example
-```
-
-To exercise the ROS 2 example, publish some input data in separate terminals after sourcing the
-workspace:
-
-```bash
-ros2 topic pub --once /tcp_pose geometry_msgs/msg/PoseStamped \
-  "{pose: {position: {x: 0.1, y: 0.2, z: 0.3}, orientation: {x: 0.0, y: 0.0, z: 0.0, w: 1.0}}}"
-```
-
-```bash
-ros2 topic pub --once /image sensor_msgs/msg/Image \
-  "{height: 1, width: 2, encoding: 'rgb8', step: 6, data: [255, 0, 0, 0, 255, 0]}"
-```
-
-The basic ONNX example is only built when ONNX Runtime is available.
-In this environment it is expected under `/opt/onnxruntime/`.
-
 ## API Reference
 
 ### InferenceCore
 
 | Method | Description |
 |--------|-------------|
-| `run_inference(obs, action)` | Run inference on observations, populate action vector |
+| `run_inference(inputs, outputs)` | Run inference on a `NamedValueList` of named inputs; fill `outputs` |
 
 ### PostprocessorCore
 
 | Method | Description |
 |--------|-------------|
-| `process(actions)` | Process raw actions and return final commands |
+| `process(inference_output)` | Postprocess inference `NamedValueList`; return command `NamedValueList` |
 
 ### PreprocessorCore
 
@@ -182,6 +151,7 @@ In this environment it is expected under `/opt/onnxruntime/`.
 | `register_observation_provider(name, provider)` | Register a named observation data provider |
 | `build_observation(current_time)` | Build observation by calling all providers |
 | `get_observation()` | Get the built observation vector |
+| `get_observation_named_value_list()` | Get named tensors for inference (`observation` float vector) |
 | `get_observation_time_diffs()` | Get map of provider names to data age (seconds) |
 | `has_observation_providers()` | Check if any providers are registered |
 | `clear_observation_providers()` | Remove all registered providers |

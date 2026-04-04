@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <initializer_list>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -22,6 +23,7 @@
 #include "rclcpp/rclcpp.hpp"
 
 #include "ros2_policy_execution_core/preprocessor_core.hpp"
+#include "ros2_policy_execution_core/tensor/named_value_list.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -99,7 +101,7 @@ TEST_F(PreprocessorCoreTest, RegisterObservationProviderSuccess)
 
   std::vector<float> obs_values = {1.0f, 2.0f, 3.0f};
   rclcpp::Time timestamp(1000, 0);
-  ObservationData obs_data{obs_values, timestamp};
+  ObservationData obs_data = observation_data_from_floats(obs_values, timestamp);
 
   preprocessor_->register_observation_provider(
     "test_provider",
@@ -113,7 +115,7 @@ TEST_F(PreprocessorCoreTest, RegisterDuplicateObservationProviderThrows)
 {
   std::vector<float> obs_values = {1.0f};
   rclcpp::Time timestamp(1000, 0);
-  ObservationData obs_data{obs_values, timestamp};
+  ObservationData obs_data = observation_data_from_floats(obs_values, timestamp);
 
   preprocessor_->register_observation_provider(
     "duplicate_name",
@@ -132,7 +134,7 @@ TEST_F(PreprocessorCoreTest, ClearObservationProviders)
 {
   std::vector<float> obs_values = {1.0f};
   rclcpp::Time timestamp(1000, 0);
-  ObservationData obs_data{obs_values, timestamp};
+  ObservationData obs_data = observation_data_from_floats(obs_values, timestamp);
 
   preprocessor_->register_observation_provider(
     "provider1",
@@ -150,8 +152,8 @@ TEST_F(PreprocessorCoreTest, BuildObservationSuccess)
   std::vector<float> obs_values2 = {3.0f, 4.0f, 5.0f};
   rclcpp::Time timestamp1(900, 0);
   rclcpp::Time timestamp2(950, 0);
-  ObservationData obs_data1{obs_values1, timestamp1};
-  ObservationData obs_data2{obs_values2, timestamp2};
+  ObservationData obs_data1 = observation_data_from_floats(obs_values1, timestamp1);
+  ObservationData obs_data2 = observation_data_from_floats(obs_values2, timestamp2);
 
   preprocessor_->register_observation_provider(
     "provider1",
@@ -181,13 +183,51 @@ TEST_F(PreprocessorCoreTest, BuildObservationSuccess)
   ASSERT_EQ(time_diffs.count("provider2"), 1u);
   EXPECT_DOUBLE_EQ(time_diffs.at("provider1"), 100.0);
   EXPECT_DOUBLE_EQ(time_diffs.at("provider2"), 50.0);
+
+  const auto & list = preprocessor_->get_observation_named_value_list();
+  ASSERT_EQ(list.size(), 1u);
+  EXPECT_EQ(list[0].name, "observation");
+  ASSERT_TRUE(list[0].value.is_tensor());
+  EXPECT_EQ(list[0].value.as_tensor().num_elements(), 5u);
+}
+
+TEST_F(PreprocessorCoreTest, BuildObservationWithTensorValueMatchesFlatVector)
+{
+  auto storage = std::make_shared<std::vector<float>>(
+    std::initializer_list<float>{2.0f, 3.0f});
+  const Value obs_tensor(Tensor::share_vector(storage, {2}));
+  rclcpp::Time timestamp(900, 0);
+  ObservationData obs_data(obs_tensor, timestamp);
+
+  preprocessor_->register_observation_provider(
+    "tensor_provider",
+    {"a", "b"},
+    [&obs_data]() -> const ObservationData & {return obs_data;});
+
+  rclcpp::Time current_time(1000, 0);
+  ASSERT_TRUE(preprocessor_->build_observation(current_time));
+
+  const auto & flat = preprocessor_->get_observation();
+  ASSERT_EQ(flat.size(), 2u);
+  EXPECT_FLOAT_EQ(flat[0], 2.0f);
+  EXPECT_FLOAT_EQ(flat[1], 3.0f);
+
+  const auto & list = preprocessor_->get_observation_named_value_list();
+  ASSERT_EQ(list.size(), 1u);
+  EXPECT_EQ(list[0].name, "observation");
+  ASSERT_TRUE(list[0].value.is_tensor());
+  const Tensor & out_tensor = list[0].value.as_tensor();
+  ASSERT_EQ(out_tensor.num_elements(), 2u);
+  const auto span = out_tensor.span<float>();
+  EXPECT_FLOAT_EQ(span[0], 2.0f);
+  EXPECT_FLOAT_EQ(span[1], 3.0f);
 }
 
 TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnEmptyVector)
 {
   std::vector<float> empty_values;
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data{empty_values, timestamp};
+  ObservationData obs_data = observation_data_from_floats(std::move(empty_values), timestamp);
 
   preprocessor_->register_observation_provider(
     "empty_provider",
@@ -202,7 +242,7 @@ TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnFutureTimestamp)
 {
   std::vector<float> obs_values = {1.0f};
   rclcpp::Time future_timestamp(2000, 0);
-  ObservationData obs_data{obs_values, future_timestamp};
+  ObservationData obs_data = observation_data_from_floats(obs_values, future_timestamp);
 
   preprocessor_->register_observation_provider(
     "future_provider",
@@ -217,7 +257,7 @@ TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnSizeMismatch)
 {
   std::vector<float> obs_values = {1.0f, 2.0f};  // 2 values
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data{obs_values, timestamp};
+  ObservationData obs_data = observation_data_from_floats(obs_values, timestamp);
 
   preprocessor_->register_observation_provider(
     "mismatched_provider",
@@ -228,13 +268,56 @@ TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnSizeMismatch)
   EXPECT_THROW(preprocessor_->build_observation(current_time), std::runtime_error);
 }
 
+TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnEmptyValue)
+{
+  rclcpp::Time timestamp(900, 0);
+  ObservationData obs_data(Value(), timestamp);
+
+  preprocessor_->register_observation_provider(
+    "empty_value_provider",
+    {"a"},
+    [&obs_data]() -> const ObservationData & {return obs_data;});
+
+  rclcpp::Time current_time(1000, 0);
+  EXPECT_THROW(preprocessor_->build_observation(current_time), std::runtime_error);
+}
+
+TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnNonFloat32Tensor)
+{
+  auto storage = std::make_shared<std::vector<int32_t>>(std::vector<int32_t>{7});
+  const Value v(Tensor::share_vector(storage, {1}));
+  rclcpp::Time timestamp(900, 0);
+  ObservationData obs_data(v, timestamp);
+
+  preprocessor_->register_observation_provider(
+    "int32_provider",
+    {"seg"},
+    [&obs_data]() -> const ObservationData & {return obs_data;});
+
+  rclcpp::Time current_time(1000, 0);
+  EXPECT_THROW(preprocessor_->build_observation(current_time), std::runtime_error);
+}
+
+TEST_F(PreprocessorCoreTest, TensorRejectsNonEmptyStrides)
+{
+  auto storage = std::make_shared<std::vector<float>>(std::vector<float>{1.0f, 2.0f});
+  EXPECT_THROW(
+    Tensor(
+      DataType::Float32,
+      {2},
+      ByteBufferView::share_vector(storage),
+      {},
+      {1}),
+    std::invalid_argument);
+}
+
 TEST_F(PreprocessorCoreTest, GetObservationNames)
 {
   std::vector<float> obs_values1 = {1.0f, 2.0f};
   std::vector<float> obs_values2 = {3.0f};
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data1{obs_values1, timestamp};
-  ObservationData obs_data2{obs_values2, timestamp};
+  ObservationData obs_data1 = observation_data_from_floats(obs_values1, timestamp);
+  ObservationData obs_data2 = observation_data_from_floats(obs_values2, timestamp);
 
   preprocessor_->register_observation_provider(
     "provider1",
@@ -356,9 +439,9 @@ TEST_F(PreprocessorCoreTest, HistoryPopsOldestWhenFull)
 
 TEST_F(PreprocessorCoreTest, BuildObservationClearsAndRebuilds)
 {
-  std::vector<float> obs_values = {1.0f};
+  auto obs_storage = std::make_shared<std::vector<float>>(std::vector<float>{1.0f});
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data{obs_values, timestamp};
+  ObservationData obs_data = observation_data_from_float_vector(obs_storage, timestamp);
 
   preprocessor_->register_observation_provider(
     "provider",
@@ -369,8 +452,7 @@ TEST_F(PreprocessorCoreTest, BuildObservationClearsAndRebuilds)
   preprocessor_->build_observation(current_time);
   EXPECT_FLOAT_EQ(preprocessor_->get_observation()[0], 1.0f);
 
-  // Change the values in the underlying vector (obs_data holds a reference to it)
-  obs_values[0] = 100.0f;
+  (*obs_storage)[0] = 100.0f;
   preprocessor_->build_observation(current_time);
   EXPECT_FLOAT_EQ(preprocessor_->get_observation()[0], 100.0f);
 }
