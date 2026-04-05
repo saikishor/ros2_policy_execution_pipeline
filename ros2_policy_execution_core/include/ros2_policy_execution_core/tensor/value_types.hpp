@@ -19,15 +19,9 @@
 
 /**
  * @file value_types.hpp
- * @brief Aggregate header for tensor, device, and named-value types in the policy pipeline.
+ * @brief Aggregate header for all tensor, device, and named-value types.
  *
- * Include only the headers required for the symbols in use, in order to keep compile-time dependencies small:
- * - tensor/data_type.hpp — DataType, DataTypeForElement, data_type_v, data_type_size
- * - tensor/tensor_device.hpp — Device, DeviceType
- * - tensor/tensor_types.hpp — ByteBufferView, Tensor (includes data_type.hpp)
- * - tensor/named_value_list.hpp — Value, NamedValueList, find_value
- *
- * \sa doc/developer_guide.md
+ * \sa doc/developer_guide.md for per-header include guidance.
  */
 
 #include "ros2_policy_execution_core/tensor/tensor_device.hpp"

@@ -20,8 +20,6 @@
 /**
  * @file data_type.hpp
  * @brief Pipeline element datatype enum and C++ scalar mapping traits.
- *
- * For buffer and tensor views, include `tensor/tensor_types.hpp` (which includes this header).
  */
 
 #include <cstddef>
@@ -37,31 +35,49 @@ namespace ros2_policy_execution_core
 enum class DataType
 {
   Unknown = 0,
+  Float16,
+  BFloat16,
   Float32,
   Float64,
+  Int8,
+  Int16,
   Int32,
   Int64,
   UInt8,
+  UInt16,
+  UInt32,
+  UInt64,
   Bool
 };
 
-/**
- * @brief Size in bytes of one element of \p data_type; 0 for Unknown.
- * @param[in] data_type Datatype to query.
- */
+/// @brief Size in bytes of one element of \p data_type; 0 for Unknown.
 [[nodiscard]] constexpr std::size_t data_type_size(const DataType data_type) noexcept
 {
   switch (data_type) {
+    case DataType::Float16:
+      return 2;
+    case DataType::BFloat16:
+      return 2;
     case DataType::Float32:
       return sizeof(float);
     case DataType::Float64:
       return sizeof(double);
+    case DataType::Int8:
+      return sizeof(int8_t);
+    case DataType::Int16:
+      return sizeof(int16_t);
     case DataType::Int32:
       return sizeof(int32_t);
     case DataType::Int64:
       return sizeof(int64_t);
     case DataType::UInt8:
       return sizeof(uint8_t);
+    case DataType::UInt16:
+      return sizeof(uint16_t);
+    case DataType::UInt32:
+      return sizeof(uint32_t);
+    case DataType::UInt64:
+      return sizeof(uint64_t);
     case DataType::Bool:
       return sizeof(bool);
     case DataType::Unknown:
@@ -105,9 +121,39 @@ struct DataTypeForElement<int64_t>
 };
 
 template<>
+struct DataTypeForElement<int8_t>
+{
+  static constexpr DataType value = DataType::Int8;
+};
+
+template<>
+struct DataTypeForElement<int16_t>
+{
+  static constexpr DataType value = DataType::Int16;
+};
+
+template<>
 struct DataTypeForElement<uint8_t>
 {
   static constexpr DataType value = DataType::UInt8;
+};
+
+template<>
+struct DataTypeForElement<uint16_t>
+{
+  static constexpr DataType value = DataType::UInt16;
+};
+
+template<>
+struct DataTypeForElement<uint32_t>
+{
+  static constexpr DataType value = DataType::UInt32;
+};
+
+template<>
+struct DataTypeForElement<uint64_t>
+{
+  static constexpr DataType value = DataType::UInt64;
 };
 
 template<>
@@ -116,10 +162,7 @@ struct DataTypeForElement<bool>
   static constexpr DataType value = DataType::Bool;
 };
 
-/**
- * @brief Compile-time \ref DataType for C++ element type \p T (cv-qualified \p T uses the unqualified mapping).
- * @tparam T C++ element type to map.
- */
+/// @brief Compile-time \ref DataType for C++ element type \p T (cv-qualifiers are stripped).
 template<typename T>
 inline constexpr DataType data_type_v = DataTypeForElement<std::remove_cv_t<T>>::value;
 

@@ -35,11 +35,7 @@ namespace ros2_policy_execution_adapters
 {
 
 /**
- * @brief Keeps borrowed tensor memory alive while exposing it as an `Ort::Value`.
- *
- * ONNX Runtime can wrap caller-provided CPU buffers without copying them, but
- * the caller must keep that storage alive for as long as the `Ort::Value` is
- * used. This wrapper makes that lifetime explicit.
+ * @brief Pairs an `Ort::Value` with the shared owner keeping its borrowed memory alive.
  */
 struct OrtValueReference
 {
@@ -48,25 +44,38 @@ struct OrtValueReference
 };
 
 /**
- * @brief Convert a policy-execution datatype to the matching ONNX Runtime type.
- *
- * @param[in] data_type Policy tensor element type.
- * @return Matching ONNX Runtime tensor element type.
+ * @brief Convert a pipeline DataType to the corresponding ONNX Runtime element type.
+ * @param[in] data_type Pipeline tensor element type.
  */
-inline ONNXTensorElementDataType to_onnx_data_type(const ros2_policy_execution_core::DataType data_type)
+inline ONNXTensorElementDataType to_onnx_data_type(
+  const ros2_policy_execution_core::DataType data_type)
 {
   using ros2_policy_execution_core::DataType;
   switch (data_type) {
+    case DataType::Float16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16;
+    case DataType::BFloat16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16;
     case DataType::Float32:
       return ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT;
     case DataType::Float64:
       return ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE;
+    case DataType::Int8:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8;
+    case DataType::Int16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16;
     case DataType::Int32:
       return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32;
     case DataType::Int64:
       return ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64;
     case DataType::UInt8:
       return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8;
+    case DataType::UInt16:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16;
+    case DataType::UInt32:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32;
+    case DataType::UInt64:
+      return ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64;
     case DataType::Bool:
       return ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL;
     default:
@@ -76,25 +85,38 @@ inline ONNXTensorElementDataType to_onnx_data_type(const ros2_policy_execution_c
 }
 
 /**
- * @brief Convert an ONNX Runtime element type to the matching policy datatype.
- *
+ * @brief Convert an ONNX Runtime element type to the corresponding pipeline DataType.
  * @param[in] data_type ONNX Runtime element type.
- * @return Matching policy datatype.
  */
-inline ros2_policy_execution_core::DataType from_onnx_data_type(const ONNXTensorElementDataType data_type)
+inline ros2_policy_execution_core::DataType from_onnx_data_type(
+  const ONNXTensorElementDataType data_type)
 {
   using ros2_policy_execution_core::DataType;
   switch (data_type) {
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT16:
+      return DataType::Float16;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_BFLOAT16:
+      return DataType::BFloat16;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT:
       return DataType::Float32;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE:
       return DataType::Float64;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8:
+      return DataType::Int8;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16:
+      return DataType::Int16;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32:
       return DataType::Int32;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64:
       return DataType::Int64;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8:
       return DataType::UInt8;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16:
+      return DataType::UInt16;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32:
+      return DataType::UInt32;
+    case ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64:
+      return DataType::UInt64;
     case ONNX_TENSOR_ELEMENT_DATA_TYPE_BOOL:
       return DataType::Bool;
     default:
@@ -104,20 +126,15 @@ inline ros2_policy_execution_core::DataType from_onnx_data_type(const ONNXTensor
 }
 
 /**
- * @brief Wrap a dense CPU tensor as an `Ort::Value` without copying payload bytes.
- *
- * @param[in] tensor Mutable tensor to expose to ONNX Runtime.
- * @return Wrapper containing the `Ort::Value` and the storage lifetime anchor.
+ * @brief Wrap a CPU tensor as an `Ort::Value` without copying; requires mutable storage.
+ * @param[in] tensor Mutable CPU tensor; caller retains ownership of the underlying buffer.
  */
 inline OrtValueReference make_ort_value_reference(ros2_policy_execution_core::Tensor & tensor)
 {
   using ros2_policy_execution_core::DataType;
   using ros2_policy_execution_core::Tensor;
-  if (!tensor.is_contiguous()) {
-    throw std::invalid_argument("ONNX Runtime conversion requires a contiguous tensor.");
-  }
   if (tensor.device().type != ros2_policy_execution_core::DeviceType::Cpu) {
-    throw std::invalid_argument("v1 ONNX Runtime conversion only supports CPU tensors.");
+    throw std::invalid_argument("ONNX Runtime conversion only supports CPU tensors.");
   }
   if (!tensor.buffer().is_mutable()) {
     throw std::invalid_argument(
@@ -135,12 +152,8 @@ inline OrtValueReference make_ort_value_reference(ros2_policy_execution_core::Te
 }
 
 /**
- * @brief Create a non-owning read-only tensor view over an `Ort::Value`.
- *
- * The caller must keep the `Ort::Value` alive while using the returned tensor.
- *
- * @param[in] value ONNX Runtime tensor value.
- * @return Non-owning `Tensor` view.
+ * @brief Non-owning read-only Tensor view over an `Ort::Value`.
+ * @param[in] value CPU tensor value; caller must keep alive while the returned Tensor is in use.
  */
 inline ros2_policy_execution_core::Tensor borrow_tensor_from_ort_value(const Ort::Value & value)
 {
@@ -153,7 +166,7 @@ inline ros2_policy_execution_core::Tensor borrow_tensor_from_ort_value(const Ort
   }
   const Ort::ConstMemoryInfo mem_info = value.GetTensorMemoryInfo();
   if (mem_info.GetDeviceType() != OrtMemoryInfoDeviceType_CPU) {
-    throw std::invalid_argument("v1 only supports ONNX Runtime tensors in CPU memory.");
+    throw std::invalid_argument("Only ONNX Runtime tensors in CPU memory are supported.");
   }
   auto shape_info = value.GetTensorTypeAndShapeInfo();
   std::vector<int64_t> shape = shape_info.GetShape();
@@ -168,12 +181,8 @@ inline ros2_policy_execution_core::Tensor borrow_tensor_from_ort_value(const Ort
 }
 
 /**
- * @brief Create a non-owning mutable tensor view over an `Ort::Value`.
- *
- * The caller must keep the `Ort::Value` alive while using the returned tensor.
- *
- * @param[in] value Mutable ONNX Runtime tensor value.
- * @return Non-owning mutable `Tensor` view.
+ * @brief Non-owning mutable Tensor view over an `Ort::Value`.
+ * @param[in] value Mutable CPU tensor value; caller must keep alive while the returned Tensor is in use.
  */
 inline ros2_policy_execution_core::Tensor borrow_tensor_from_ort_value(Ort::Value & value)
 {
@@ -186,7 +195,7 @@ inline ros2_policy_execution_core::Tensor borrow_tensor_from_ort_value(Ort::Valu
   }
   const Ort::ConstMemoryInfo mem_info = value.GetTensorMemoryInfo();
   if (mem_info.GetDeviceType() != OrtMemoryInfoDeviceType_CPU) {
-    throw std::invalid_argument("v1 only supports ONNX Runtime tensors in CPU memory.");g
+    throw std::invalid_argument("Only ONNX Runtime tensors in CPU memory are supported.");
   }
   auto shape_info = value.GetTensorTypeAndShapeInfo();
   std::vector<int64_t> shape = shape_info.GetShape();
@@ -201,10 +210,8 @@ inline ros2_policy_execution_core::Tensor borrow_tensor_from_ort_value(Ort::Valu
 }
 
 /**
- * @brief Create a tensor that keeps the moved `Ort::Value` alive internally.
- *
- * @param[in] value ONNX Runtime tensor value to wrap.
- * @return Owning `Tensor` view over ORT-owned storage.
+ * @brief Owning Tensor that keeps the moved `Ort::Value` alive internally.
+ * @param[in] value ORT tensor value; moved into shared storage owned by the returned Tensor.
  */
 inline ros2_policy_execution_core::Tensor tensor_from_ort_value(Ort::Value value)
 {
@@ -218,7 +225,7 @@ inline ros2_policy_execution_core::Tensor tensor_from_ort_value(Ort::Value value
   auto owner = std::make_shared<Ort::Value>(std::move(value));
   const Ort::ConstMemoryInfo mem_info = owner->GetTensorMemoryInfo();
   if (mem_info.GetDeviceType() != OrtMemoryInfoDeviceType_CPU) {
-    throw std::invalid_argument("v1 only supports ONNX Runtime tensors in CPU memory.");
+    throw std::invalid_argument("Only ONNX Runtime tensors in CPU memory are supported.");
   }
   auto shape_info = owner->GetTensorTypeAndShapeInfo();
   std::vector<int64_t> shape = shape_info.GetShape();
@@ -233,12 +240,8 @@ inline ros2_policy_execution_core::Tensor tensor_from_ort_value(Ort::Value value
 }
 
 /**
- * @brief Create a tensor that keeps both an `Ort::Value` and its original
- * buffer owner alive (for example after `make_ort_value_reference()`).
- *
- * @param[in] reference ONNX Runtime tensor value plus the lifetime anchor for
- *   the payload bytes.
- * @return Owning `Tensor` view.
+ * @brief Owning Tensor that keeps both the `Ort::Value` and the buffer owner alive.
+ * @param[in] reference ORT tensor value plus the lifetime anchor for the payload bytes.
  */
 inline ros2_policy_execution_core::Tensor tensor_from_ort_value(OrtValueReference reference)
 {
@@ -252,7 +255,7 @@ inline ros2_policy_execution_core::Tensor tensor_from_ort_value(OrtValueReferenc
   auto owner = std::make_shared<OrtValueReference>(std::move(reference));
   const Ort::ConstMemoryInfo mem_info = owner->value.GetTensorMemoryInfo();
   if (mem_info.GetDeviceType() != OrtMemoryInfoDeviceType_CPU) {
-    throw std::invalid_argument("v1 only supports ONNX Runtime tensors in CPU memory.");
+    throw std::invalid_argument("Only ONNX Runtime tensors in CPU memory are supported.");
   }
   auto shape_info = owner->value.GetTensorTypeAndShapeInfo();
   std::vector<int64_t> shape = shape_info.GetShape();

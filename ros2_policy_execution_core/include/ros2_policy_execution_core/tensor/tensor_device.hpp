@@ -19,22 +19,20 @@
 
 /**
  * @file tensor_device.hpp
- * @brief Device classification and lightweight metadata for tensors.
- *
- * \sa doc/developer_guide.md
+ * @brief Device classification and metadata for tensors.
  */
 
 namespace ros2_policy_execution_core
 {
 
 /**
- * @brief Logical device family for where tensor data resides (CPU, CUDA, or custom).
+ * @brief Logical device family for where tensor data resides.
  */
 enum class DeviceType
 {
-  Cpu = 0,   ///< Host CPU.
-  Cuda,      ///< NVIDIA CUDA device.
-  Custom     ///< Vendor- or application-defined device.
+  Cpu = 0,       ///< Host CPU.
+  Accelerator,   ///< Hardware accelerator (GPU, NPU, TPU, FPGA, etc.).
+  Custom         ///< Vendor- or application-defined device.
 };
 
 /**
@@ -42,8 +40,8 @@ enum class DeviceType
  */
 struct Device
 {
-  DeviceType type = DeviceType::Cpu;  //!< Device class for tensor storage; see DeviceType.
-  int device_id = 0;  //!< For Cuda: device ordinal. Ignored for Cpu; meaning is Custom-specific.
+  DeviceType type = DeviceType::Cpu;
+  int device_id = 0;  //!< Device ordinal for Accelerator; ignored for Cpu.
 };
 
 }  // namespace ros2_policy_execution_core

@@ -19,9 +19,7 @@
 
 /**
  * @file tensor_types.hpp
- * @brief `ByteBufferView` (byte range + optional lifetime anchor) and dense `Tensor` views.
- *
- * \sa tensor/data_type.hpp for \ref DataType and `data_type_v` without pulling in buffer types.
+ * @brief `ByteBufferView` (byte range + optional lifetime anchor) and dense `Tensor` view.
  */
 
 #include <cstddef>
@@ -40,12 +38,10 @@ namespace ros2_policy_execution_core
 {
 
 /**
- * @brief Non-owning view of a byte range (`data`, `bytes`) with an optional `std::shared_ptr` anchor.
+ * @brief Non-owning view of a byte range with an optional shared-ownership anchor.
  *
- * Does not allocate the payload: `owner()` may be empty when the caller guarantees lifetime, or
- * non-empty to keep storage alive (for example shared `std::vector` storage, a ROS message body,
- * or an ONNX Runtime wrapper). One allocation may back several `Tensor` views; mutability is fixed
- * at construction (mutable vs read-only overloads).
+ * Does not allocate: `owner()` may be empty when the caller guarantees lifetime, or non-empty
+ * to extend storage lifetime. Mutability is fixed at construction (mutable vs const overloads).
  */
 class ByteBufferView
 {
@@ -54,21 +50,7 @@ public:
   ByteBufferView() = default;
 
   /**
-   * @brief Constructs a view over mutable storage.
-   *
-   * When \p owner is non-empty, its lifetime extends that of \p data. Passing \p owner
-   * by lvalue copies the std::shared_ptr; std::move(owner) transfers the handle into
-   * this object and leaves the source empty.
-   *
-   * \code{.cpp}
-   * auto values = std::make_shared<std::vector<float>>(
-   *   std::initializer_list<float>{1.0f, 2.0f, 3.0f});
-   *
-   * ByteBufferView buffer(values->data(), values->size() * sizeof(float), values);
-   *
-   * // `values` remains valid; `values` and `buffer.owner()` reference the same control block.
-   * \endcode
-   *
+   * @brief Constructs a mutable view. If \p owner is non-empty its lifetime extends \p data.
    * @param[in] data Pointer to the first byte of the storage.
    * @param[in] bytes Size of the storage in bytes.
    * @param[in] owner Optional shared owner whose lifetime covers \p data.
@@ -83,10 +65,7 @@ public:
   {}
 
   /**
-   * @brief Constructs a view over read-only storage.
-   *
-   * Buffers constructed through this overload are immutable; mutable_data() fails at runtime.
-   *
+   * @brief Constructs a read-only view; mutable_data() will throw at runtime.
    * @param[in] data Pointer to the first byte of the storage.
    * @param[in] bytes Size of the storage in bytes.
    * @param[in] owner Optional shared owner whose lifetime covers \p data.
@@ -101,7 +80,7 @@ public:
   {}
 
   /**
-   * @brief Non-owning view over a mutable typed range; does not allocate or copy elements.
+   * @brief Non-owning view over a mutable typed range.
    * @tparam T Element type.
    * @param[in] data Start of the typed storage.
    * @param[in] count Number of elements.
@@ -117,7 +96,7 @@ public:
   }
 
   /**
-   * @brief Non-owning view over a const typed range; does not allocate or copy elements.
+   * @brief Non-owning view over a const typed range.
    * @tparam T Element type.
    * @param[in] data Start of the typed storage.
    * @param[in] count Number of elements.
@@ -132,7 +111,7 @@ public:
   }
 
   /**
-   * @brief View over std::vector storage held by a shared pointer; aliases vector::data() and shares ownership.
+   * @brief View over shared std::vector storage.
    * @tparam T Vector element type.
    * @param[in] values Non-null shared vector owning the bytes.
    */
@@ -153,7 +132,7 @@ public:
   }
 
   /**
-   * @brief Mutable payload inside a larger shared object (for example, a ROS message body).
+   * @brief Mutable view into a subrange of a larger shared object.
    * @tparam OwnerT Shared owner type.
    * @param[in] owner Non-null shared object whose lifetime covers \p data.
    * @param[in] data Start of the aliased bytes.
@@ -174,7 +153,7 @@ public:
   }
 
   /**
-   * @brief Const payload inside a larger shared object (for example, a ROS message body).
+   * @brief Const view into a subrange of a larger shared object.
    * @tparam OwnerT Shared owner type.
    * @param[in] owner Non-null shared object whose lifetime covers \p data.
    * @param[in] data Start of the aliased bytes.
@@ -197,12 +176,7 @@ public:
     return data_;
   }
 
-  /**
-   * @brief Mutable pointer to the start of the byte range.
-   *
-   * Raises std::runtime_error if the buffer was constructed from read-only storage.
-   * Inference backends may use this when a non-const pointer is required for wrapped storage.
-   */
+  /// @brief Mutable pointer to the byte range; throws if the view is read-only.
   [[nodiscard]] void * mutable_data()
   {
     if (!is_mutable_) {
@@ -211,7 +185,7 @@ public:
     return const_cast<std::byte *>(data_);
   }
 
-  /// @brief Whether mutable_data() may be invoked without raising std::runtime_error.
+  /// @brief Whether this view was constructed over mutable storage.
   [[nodiscard]] bool is_mutable() const noexcept
   {
     return is_mutable_;
@@ -223,7 +197,7 @@ public:
     return bytes_;
   }
 
-  /// @brief Whether data() is non-null or the byte length is zero.
+  /// @brief Whether the view refers to valid storage.
   [[nodiscard]] bool is_valid() const noexcept
   {
     return data_ != nullptr || bytes_ == 0;
@@ -243,37 +217,33 @@ private:
 };
 
 /**
- * @brief Dense tensor view: shape, optional stride placeholder, datatype, device, and `ByteBufferView` storage view.
+ * @brief Dense tensor view: shape, datatype, device, and `ByteBufferView` storage view.
  *
- * The pipeline contract is contiguous row-major storage only: `strides()` must be empty at construction.
- * Non-empty strides are rejected in validate(). Use `byte_offset` to address a subrange inside the buffer.
- * A future strided view type may be added without changing this dense invariant.
+ * The pipeline contract is contiguous row-major storage only.
+ * Use `byte_offset` to address a subrange inside the buffer.
  */
 class Tensor
 {
 public:
-  /// @brief Default-constructed tensor; must be assigned before use as a non-empty payload.
+  /// @brief Default-constructs an empty tensor; must be assigned before use.
   Tensor() = default;
 
   /**
-   * @brief Constructs a tensor view over existing storage and invokes validate().
+   * @brief Constructs a tensor view over existing storage.
    * @param[in] data_type Element datatype.
    * @param[in] shape Per-dimension sizes (non-negative).
-   * @param[in] buffer Backing bytes (must cover payload for contiguous tensors).
+   * @param[in] buffer Backing bytes; must cover the full tensor payload.
    * @param[in] device Device metadata.
-   * @param[in] strides Must be empty (dense row-major). Non-empty values are rejected.
-   * @param[in] byte_offset Byte offset from the start of \p buffer to the tensor payload.
+   * @param[in] byte_offset Byte offset into \p buffer where the tensor payload begins.
    */
   Tensor(
     DataType data_type,
     std::vector<int64_t> shape,
     ByteBufferView buffer,
     Device device = {},
-    std::vector<int64_t> strides = {},
     std::size_t byte_offset = 0)
   : data_type_(data_type),
     shape_(std::move(shape)),
-    strides_(std::move(strides)),
     buffer_(std::move(buffer)),
     device_(device),
     byte_offset_(byte_offset)
@@ -282,8 +252,8 @@ public:
   }
 
   /**
-   * @brief Factory equivalent to Tensor with ByteBufferView::share_vector; element type is \p T.
-   * @tparam T std::vector element type.
+   * @brief Construct a tensor backed by a shared vector.
+   * @tparam T Vector element type.
    * @param[in] values Non-null shared vector owning the payload.
    * @param[in] shape Tensor dimensions.
    * @param[in] device Device metadata.
@@ -313,12 +283,6 @@ public:
     return shape_;
   }
 
-  /// @brief Empty after validate(); placeholder field for a future strided tensor type.
-  [[nodiscard]] const std::vector<int64_t> & strides() const noexcept
-  {
-    return strides_;
-  }
-
   /// @brief Underlying byte storage and lifetime anchor.
   [[nodiscard]] const ByteBufferView & buffer() const noexcept
   {
@@ -331,25 +295,19 @@ public:
     return device_;
   }
 
-  /// @brief Payload start as a byte offset into buffer().
+  /// @brief Byte offset into buffer() where the tensor payload begins.
   [[nodiscard]] std::size_t byte_offset() const noexcept
   {
     return byte_offset_;
   }
 
-  /// @brief True when strides() is empty; always true for tensors that passed validate().
-  [[nodiscard]] bool is_contiguous() const noexcept
-  {
-    return strides_.empty();
-  }
-
-  /// @brief Number of dimensions (shape().size()).
+  /// @brief Number of dimensions.
   [[nodiscard]] std::size_t rank() const noexcept
   {
     return shape_.size();
   }
 
-  /// @brief Product of shape dimensions (scalar rank 0 yields one element).
+  /// @brief Total element count (product of shape dimensions).
   [[nodiscard]] std::size_t num_elements() const noexcept
   {
     std::size_t count = 1;
@@ -359,13 +317,13 @@ public:
     return count;
   }
 
-  /// @brief Logical payload size: num_elements() * element size in bytes.
+  /// @brief Payload size in bytes.
   [[nodiscard]] std::size_t bytes() const noexcept
   {
     return num_elements() * data_type_size(data_type_);
   }
 
-  /// @brief Bytes from byte_offset() to the end of buffer() (clamped if offset past end).
+  /// @brief Remaining bytes in buffer after byte_offset(); 0 if offset exceeds buffer size.
   [[nodiscard]] std::size_t available_bytes() const noexcept
   {
     if (byte_offset_ > buffer_.bytes()) {
@@ -374,7 +332,7 @@ public:
     return buffer_.bytes() - byte_offset_;
   }
 
-  /// @brief Read-only tensor payload (buffer data + byte_offset); may be nullptr.
+  /// @brief Read-only pointer to the tensor payload; may be nullptr.
   [[nodiscard]] const void * raw_data() const noexcept
   {
     if (buffer_.data() == nullptr) {
@@ -383,7 +341,7 @@ public:
     return static_cast<const std::byte *>(buffer_.data()) + byte_offset_;
   }
 
-  /// @brief Mutable tensor payload; uses buffer().mutable_data().
+  /// @brief Mutable pointer to the tensor payload; throws if buffer is read-only.
   [[nodiscard]] void * mutable_raw_data()
   {
     if (buffer_.data() == nullptr) {
@@ -428,10 +386,6 @@ private:
         throw std::invalid_argument("Tensor dimensions must be non-negative.");
       }
     }
-    if (!strides_.empty()) {
-      throw std::invalid_argument(
-        "Tensor strides are not supported; use dense row-major storage (empty strides).");
-    }
     if (byte_offset_ > buffer_.bytes()) {
       throw std::invalid_argument("Tensor byte offset exceeds the buffer size.");
     }
@@ -450,7 +404,6 @@ private:
 
   DataType data_type_ = DataType::Unknown;
   std::vector<int64_t> shape_ = {};
-  std::vector<int64_t> strides_ = {};
   ByteBufferView buffer_ = {};
   Device device_ = {};
   std::size_t byte_offset_ = 0;

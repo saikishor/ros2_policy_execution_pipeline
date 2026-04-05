@@ -44,6 +44,21 @@ Core ships no ONNX/TRT/OpenVINO/TFLite headers or libraries. Optional adapter pa
 3. Tests match the split — Core tests: buffers, shapes, dtypes, `NamedValueList` behavior, preprocessor rules. Adapter / integration tests: next to the runtime they need.
 4. Defer until needed — e.g. a dedicated strided tensor view (core `Tensor` is dense row-major only), automatic NCHW/NHWC fixes, GPU allocation inside core types.
 
+## Deferred: strided tensor support
+
+The core `Tensor` type enforces dense, contiguous, row-major storage. Strides — per-dimension byte steps that can differ from the dense layout — are intentionally not supported yet. In frameworks like NumPy and PyTorch, strides enable zero-copy transpose, slicing, and broadcasting, but they add complexity to every consumer of the tensor (each pipeline stage must handle non-contiguous memory or call `.contiguous()` before proceeding).
+
+The current pipeline contract passes contiguous buffers between preprocessor, inference, and postprocessor stages, and the ORT adapter requires contiguous data for zero-copy wrapping. Strides would only provide a benefit if profiling showed that inter-stage copies are a bottleneck worth eliminating by passing non-contiguous views through the pipeline. Until that need is demonstrated, the simpler dense-only invariant keeps the API surface small and every stage's assumptions uniform. If strided support is added later, it should be introduced as a separate type (e.g. `StridedTensorView`) rather than complicating the existing `Tensor` class.
+
+## Versioning approach for core types
+
+Core types (`Tensor`, `ByteBufferView`, `NamedValueList`, `DataType`) carry no version field. The approach is:
+
+- Evolve in-place for additive changes — new `DataType` values, new `Device` capabilities, new fields with defaults. These don't break existing callers.
+- New types for different contracts — fundamentally different representations (e.g. `StridedTensorView`, `SparseTensor`) should be introduced as new `Value::Kind` variants in the existing `std::variant`, not as version bumps on `Tensor`.
+- Version the package, not the struct — use semver on the package for breaking changes. In-process types that we control don't benefit from per-struct version fields, which add dispatch complexity (`if version >= 2`) with no real gain.
+- Version at the serialization boundary — if tensors ever cross process boundaries (shared memory, ROS topics), version the wire format at that layer, not in the core in-memory types.
+
 ## Maintainers
 
 Prefer the principles above when reviewing changes. Paths: `ros2_policy_execution_core/include/ros2_policy_execution_core/tensor/`, `ros2_policy_execution_adapters/include/.../ort_tensor_conversion.hpp`.

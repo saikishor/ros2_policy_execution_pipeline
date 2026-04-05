@@ -68,7 +68,6 @@ TEST(ValueTypesTest, ByteOffsetCreatesSubviewWithoutCopy)
     {2},
     ByteBufferView::share_vector(values),
     {},
-    {},
     2 * sizeof(float));
 
   const auto span = tensor.span<float>();

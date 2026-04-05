@@ -19,11 +19,7 @@
 
 /**
  * @file named_value_list.hpp
- * @brief Named values for ordered model inputs and outputs (dense tensors in the current API).
- *
- * Includes `tensor_types.hpp`. Include only the headers required for the symbols in use
- * in order to keep compile-time dependencies small; `tensor/data_type.hpp`,
- * `tensor/tensor_device.hpp`, or `tensor/tensor_types.hpp` alone suffice when named lists are not required.
+ * @brief Named values for ordered model inputs and outputs.
  */
 
 #include <string>
@@ -37,17 +33,12 @@ namespace ros2_policy_execution_core
 {
 
 /**
- * @brief Discriminated value exchanged between preprocessors, inference backends, and postprocessors.
- *
- * The current representation supports dense tensors only; further std::variant alternatives
- * may be added without changing the Value class interface.
+ * @brief Discriminated value exchanged between pipeline stages.
  */
 class Value
 {
 public:
-  /**
-   * @brief Discriminator for the active payload.
-   */
+  /// @brief Discriminator for the active payload.
   enum class Kind
   {
     kEmpty = 0,  ///< No payload.
@@ -57,10 +48,7 @@ public:
   /// @brief Constructs an empty value (Kind::kEmpty).
   Value() = default;
 
-  /**
-   * @brief Constructs a value whose active payload is the given tensor.
-   * @param[in] tensor Tensor to store.
-   */
+  /// @brief Constructs a value holding the given tensor.
   explicit Value(Tensor tensor)
   : payload_(std::move(tensor))
   {}
@@ -101,7 +89,7 @@ private:
  */
 struct NamedValue
 {
-  std::string name;  //!< Model input or output identifier (for example, an ONNX binding name).
+  std::string name;  //!< Model input or output identifier.
   Value value;       //!< Payload associated with \p name.
 };
 
@@ -109,10 +97,9 @@ struct NamedValue
 using NamedValueList = std::vector<NamedValue>;
 
 /**
- * @brief Linear search for the first entry whose name equals \p name.
+ * @brief Find the first entry matching \p name; returns nullptr if not found.
  * @param[in] values Sequence to search.
  * @param[in] name Name to match.
- * @return Pointer to the matching Value, or nullptr if not found.
  */
 inline const Value * find_value(const NamedValueList & values, const std::string & name)
 {
@@ -124,12 +111,7 @@ inline const Value * find_value(const NamedValueList & values, const std::string
   return nullptr;
 }
 
-/**
- * @brief Mutable overload; behavior matches the overload for const NamedValueList.
- * @param[in] values Sequence to search.
- * @param[in] name Name to match.
- * @return Pointer to the matching Value, or nullptr if not found.
- */
+/// @brief Mutable overload of find_value.
 inline Value * find_value(NamedValueList & values, const std::string & name)
 {
   for (auto & entry : values) {
