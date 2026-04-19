@@ -17,9 +17,9 @@
 #include <string>
 #include <vector>
 
+#include "onnxruntime_cxx_api.h"  // NOLINT(build/include_subdir)
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "onnxruntime_cxx_api.h"
 #include "rclcpp/rclcpp.hpp"
 
 #include "ros2_policy_execution_core/preprocessor_core.hpp"
@@ -29,18 +29,19 @@ namespace ros2_policy_execution_core
 
 namespace
 {
-/// Creates one 1-D single-element Ort::Value tensor per float.
-/// IMPORTANT: `data` must outlive the returned vector.
-std::vector<Ort::Value> make_ort_values(std::vector<float> & data)
+/// Creates one 1-D single-element Ort::Value tensor per float, using ORT's allocator.
+/// The returned shared_ptrs own their memory — no external backing data required.
+std::vector<std::shared_ptr<Ort::Value>> make_ort_values(const std::vector<float> & data)
 {
-  static Ort::MemoryInfo mem_info =
-    Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  static Ort::AllocatorWithDefaultOptions allocator;
   std::vector<int64_t> shape = {1};
-  std::vector<Ort::Value> values;
+  std::vector<std::shared_ptr<Ort::Value>> values;
   values.reserve(data.size());
-  for (float & v : data) {
-    values.push_back(
-      Ort::Value::CreateTensor<float>(mem_info, &v, 1, shape.data(), 1));
+  for (float v : data) {
+    auto tensor = std::make_shared<Ort::Value>(
+      Ort::Value::CreateTensor<float>(allocator, shape.data(), 1));
+    *tensor->GetTensorMutableData<float>() = v;
+    values.push_back(std::move(tensor));
   }
   return values;
 }
@@ -195,11 +196,11 @@ TEST_F(PreprocessorCoreTest, BuildObservationSuccess)
 
   const auto & observation = preprocessor_->get_observation();
   ASSERT_EQ(observation.size(), 5u);
-  EXPECT_FLOAT_EQ(*observation[0].GetTensorData<float>(), 1.0f);
-  EXPECT_FLOAT_EQ(*observation[1].GetTensorData<float>(), 2.0f);
-  EXPECT_FLOAT_EQ(*observation[2].GetTensorData<float>(), 3.0f);
-  EXPECT_FLOAT_EQ(*observation[3].GetTensorData<float>(), 4.0f);
-  EXPECT_FLOAT_EQ(*observation[4].GetTensorData<float>(), 5.0f);
+  EXPECT_FLOAT_EQ(*observation[0]->GetTensorData<float>(), 1.0f);
+  EXPECT_FLOAT_EQ(*observation[1]->GetTensorData<float>(), 2.0f);
+  EXPECT_FLOAT_EQ(*observation[2]->GetTensorData<float>(), 3.0f);
+  EXPECT_FLOAT_EQ(*observation[3]->GetTensorData<float>(), 4.0f);
+  EXPECT_FLOAT_EQ(*observation[4]->GetTensorData<float>(), 5.0f);
 
   // Verify time diffs
   const auto & time_diffs = preprocessor_->get_observation_time_diffs();
@@ -366,9 +367,9 @@ TEST_F(PreprocessorCoreTest, HistoryOrderMostRecentFirst)
   const auto & obs_history = preprocessor_->get_observation_history();
   ASSERT_EQ(obs_history.size(), 3u);
   // Most recent should be first
-  EXPECT_FLOAT_EQ(*obs_history[0][0].GetTensorData<float>(), 3.0f);
-  EXPECT_FLOAT_EQ(*obs_history[1][0].GetTensorData<float>(), 2.0f);
-  EXPECT_FLOAT_EQ(*obs_history[2][0].GetTensorData<float>(), 1.0f);
+  EXPECT_FLOAT_EQ(*obs_history[0][0]->GetTensorData<float>(), 3.0f);
+  EXPECT_FLOAT_EQ(*obs_history[1][0]->GetTensorData<float>(), 2.0f);
+  EXPECT_FLOAT_EQ(*obs_history[2][0]->GetTensorData<float>(), 1.0f);
 
   // Same for actions
   std::vector<float> act1_raw = {10.0f};
@@ -383,9 +384,9 @@ TEST_F(PreprocessorCoreTest, HistoryOrderMostRecentFirst)
 
   const auto & action_history = preprocessor_->get_action_history();
   ASSERT_EQ(action_history.size(), 3u);
-  EXPECT_FLOAT_EQ(*action_history[0][0].GetTensorData<float>(), 30.0f);
-  EXPECT_FLOAT_EQ(*action_history[1][0].GetTensorData<float>(), 20.0f);
-  EXPECT_FLOAT_EQ(*action_history[2][0].GetTensorData<float>(), 10.0f);
+  EXPECT_FLOAT_EQ(*action_history[0][0]->GetTensorData<float>(), 30.0f);
+  EXPECT_FLOAT_EQ(*action_history[1][0]->GetTensorData<float>(), 20.0f);
+  EXPECT_FLOAT_EQ(*action_history[2][0]->GetTensorData<float>(), 10.0f);
 }
 
 TEST_F(PreprocessorCoreTest, HistoryPopsOldestWhenFull)
@@ -406,8 +407,8 @@ TEST_F(PreprocessorCoreTest, HistoryPopsOldestWhenFull)
 
   const auto & obs_history = preprocessor_->get_observation_history();
   ASSERT_EQ(obs_history.size(), 2u);
-  EXPECT_FLOAT_EQ(*obs_history[0][0].GetTensorData<float>(), 3.0f);
-  EXPECT_FLOAT_EQ(*obs_history[1][0].GetTensorData<float>(), 2.0f);
+  EXPECT_FLOAT_EQ(*obs_history[0][0]->GetTensorData<float>(), 3.0f);
+  EXPECT_FLOAT_EQ(*obs_history[1][0]->GetTensorData<float>(), 2.0f);
 }
 
 TEST_F(PreprocessorCoreTest, BuildObservationClearsAndRebuilds)
@@ -424,12 +425,12 @@ TEST_F(PreprocessorCoreTest, BuildObservationClearsAndRebuilds)
 
   rclcpp::Time current_time(1000, 0);
   preprocessor_->build_observation(current_time);
-  EXPECT_FLOAT_EQ(*preprocessor_->get_observation()[0].GetTensorData<float>(), 1.0f);
+  EXPECT_FLOAT_EQ(*preprocessor_->get_observation()[0]->GetTensorData<float>(), 1.0f);
 
-  // Change the values in the underlying buffer (obs_ort tensors wrap obs_raw directly)
-  obs_raw[0] = 100.0f;
+  // Mutate the tensor data directly through the shared_ptr and verify rebuild picks it up
+  *obs_ort[0]->GetTensorMutableData<float>() = 100.0f;
   preprocessor_->build_observation(current_time);
-  EXPECT_FLOAT_EQ(*preprocessor_->get_observation()[0].GetTensorData<float>(), 100.0f);
+  EXPECT_FLOAT_EQ(*preprocessor_->get_observation()[0]->GetTensorData<float>(), 100.0f);
 }
 
 }  // namespace ros2_policy_execution_core

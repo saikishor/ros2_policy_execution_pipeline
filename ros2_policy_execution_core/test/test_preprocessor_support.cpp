@@ -14,10 +14,11 @@
 //
 // Authors: Julia Jia
 
+#include <memory>
 #include <vector>
 
+#include "onnxruntime_cxx_api.h"  // NOLINT(build/include_subdir)
 #include "gtest/gtest.h"
-#include "onnxruntime_cxx_api.h"
 #include "rclcpp/rclcpp.hpp"
 
 #include "ros2_policy_execution_core/preprocessor_support.hpp"
@@ -27,18 +28,19 @@ namespace ros2_policy_execution_core
 
 namespace
 {
-/// Creates one 1-D single-element Ort::Value tensor per float.
-/// IMPORTANT: `data` must outlive the returned vector.
-std::vector<Ort::Value> make_ort_values(std::vector<float> & data)
+/// Creates one 1-D single-element Ort::Value tensor per float, using ORT's allocator.
+/// The returned shared_ptrs own their memory — no external backing data required.
+std::vector<std::shared_ptr<Ort::Value>> make_ort_values(const std::vector<float> & data)
 {
-  static Ort::MemoryInfo mem_info =
-    Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  static Ort::AllocatorWithDefaultOptions allocator;
   std::vector<int64_t> shape = {1};
-  std::vector<Ort::Value> values;
+  std::vector<std::shared_ptr<Ort::Value>> values;
   values.reserve(data.size());
-  for (float & v : data) {
-    values.push_back(
-      Ort::Value::CreateTensor<float>(mem_info, &v, 1, shape.data(), 1));
+  for (float v : data) {
+    auto tensor = std::make_shared<Ort::Value>(
+      Ort::Value::CreateTensor<float>(allocator, shape.data(), 1));
+    *tensor->GetTensorMutableData<float>() = v;
+    values.push_back(std::move(tensor));
   }
   return values;
 }
@@ -89,9 +91,9 @@ TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndPara
   EXPECT_EQ(registry.segment_names()[1].second[0], "b");
   EXPECT_EQ(registry.segment_names()[1].second[1], "c");
 
-  EXPECT_FLOAT_EQ(*registry.providers()[0].second().values[0].GetTensorData<float>(), 1.0f);
+  EXPECT_FLOAT_EQ(*registry.providers()[0].second().values[0]->GetTensorData<float>(), 1.0f);
   ASSERT_EQ(registry.providers()[1].second().values.size(), 2u);
-  EXPECT_FLOAT_EQ(*registry.providers()[1].second().values[0].GetTensorData<float>(), 2.0f);
+  EXPECT_FLOAT_EQ(*registry.providers()[1].second().values[0]->GetTensorData<float>(), 2.0f);
 }
 
 TEST(HistoryManagerTest, ObservationAndActionLengthsIndependent)
@@ -112,7 +114,7 @@ TEST(HistoryManagerTest, ObservationAndActionLengthsIndependent)
 
   ASSERT_EQ(hm.observations().size(), 2u);
   ASSERT_EQ(hm.actions().size(), 1u);
-  EXPECT_FLOAT_EQ(*hm.actions()[0][0].GetTensorData<float>(), 9.0f);
+  EXPECT_FLOAT_EQ(*hm.actions()[0][0]->GetTensorData<float>(), 9.0f);
 }
 
 TEST(HistoryManagerTest, SetLengthsToZeroClearsBuffers)

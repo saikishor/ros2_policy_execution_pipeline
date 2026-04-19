@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <deque>
 #include <exception>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -181,7 +182,7 @@ public:
    *
    * @return const reference to the observation vector.
    */
-  [[nodiscard]] virtual const std::vector<Ort::Value> & get_observation() const
+  [[nodiscard]] virtual const std::vector<std::shared_ptr<Ort::Value>> & get_observation() const
   {
     return current_observation_;
   }
@@ -193,7 +194,8 @@ public:
    *
    * @return const reference to the vector of observation vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<Ort::Value>> & get_observation_history() const
+  [[nodiscard]] const std::deque<std::vector<std::shared_ptr<Ort::Value>>> & get_observation_history()
+  const
   {
     return history_manager_.observations();
   }
@@ -205,17 +207,18 @@ public:
    *
    * @return const reference to the vector of action vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<Ort::Value>> & get_action_history() const
+  [[nodiscard]] const std::deque<std::vector<std::shared_ptr<Ort::Value>>> & get_action_history()
+  const
   {
     return history_manager_.actions();
   }
 
-  void set_previous_observations(const std::vector<Ort::Value> & observations)
+  void set_previous_observations(const std::vector<std::shared_ptr<Ort::Value>> & observations)
   {
     history_manager_.push_observation(observations);
   }
 
-  void set_previous_actions(const std::vector<Ort::Value> & actions)
+  void set_previous_actions(const std::vector<std::shared_ptr<Ort::Value>> & actions)
   {
     history_manager_.push_action(actions);
   }
@@ -232,7 +235,7 @@ public:
 
 private:
   /// Storage for the current observation vector
-  std::vector<Ort::Value> current_observation_ = {};
+  std::vector<std::shared_ptr<Ort::Value>> current_observation_ = {};
   ObservationProviderRegistry provider_registry_;
   HistoryManager history_manager_;
 
