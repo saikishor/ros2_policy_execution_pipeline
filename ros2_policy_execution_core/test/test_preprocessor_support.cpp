@@ -17,12 +17,32 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "onnxruntime_cxx_api.h"
 #include "rclcpp/rclcpp.hpp"
 
 #include "ros2_policy_execution_core/preprocessor_support.hpp"
 
 namespace ros2_policy_execution_core
 {
+
+namespace
+{
+/// Creates one 1-D single-element Ort::Value tensor per float.
+/// IMPORTANT: `data` must outlive the returned vector.
+std::vector<Ort::Value> make_ort_values(std::vector<float> & data)
+{
+  static Ort::MemoryInfo mem_info =
+    Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault);
+  std::vector<int64_t> shape = {1};
+  std::vector<Ort::Value> values;
+  values.reserve(data.size());
+  for (float & v : data) {
+    values.push_back(
+      Ort::Value::CreateTensor<float>(mem_info, &v, 1, shape.data(), 1));
+  }
+  return values;
+}
+}  // namespace
 
 class PreprocessorSupportTest : public ::testing::Test
 {
@@ -43,8 +63,10 @@ TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndPara
   ObservationProviderRegistry registry;
   ASSERT_TRUE(registry.empty());
 
-  std::vector<float> v1 = {1.0f};
-  std::vector<float> v2 = {2.0f, 3.0f};
+  std::vector<float> raw1 = {1.0f};
+  std::vector<float> raw2 = {2.0f, 3.0f};
+  auto v1 = make_ort_values(raw1);
+  auto v2 = make_ort_values(raw2);
   rclcpp::Time t1(1, 0);
   rclcpp::Time t2(2, 0);
   ObservationData d1{v1, t1};
@@ -67,29 +89,44 @@ TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndPara
   EXPECT_EQ(registry.segment_names()[1].second[0], "b");
   EXPECT_EQ(registry.segment_names()[1].second[1], "c");
 
-  EXPECT_FLOAT_EQ(registry.providers()[0].second().values[0], 1.0f);
+  EXPECT_FLOAT_EQ(*registry.providers()[0].second().values[0].GetTensorData<float>(), 1.0f);
   ASSERT_EQ(registry.providers()[1].second().values.size(), 2u);
-  EXPECT_FLOAT_EQ(registry.providers()[1].second().values[0], 2.0f);
+  EXPECT_FLOAT_EQ(*registry.providers()[1].second().values[0].GetTensorData<float>(), 2.0f);
 }
 
 TEST(HistoryManagerTest, ObservationAndActionLengthsIndependent)
 {
   HistoryManager hm;
   hm.set_lengths(2, 1);
-  hm.push_observation({1.0f});
-  hm.push_observation({2.0f});
-  hm.push_action({9.0f});
+
+  std::vector<float> obs_raw = {1.0f};
+  std::vector<float> obs2_raw = {2.0f};
+  std::vector<float> act_raw = {9.0f};
+  auto obs_ort = make_ort_values(obs_raw);
+  auto obs2_ort = make_ort_values(obs2_raw);
+  auto act_ort = make_ort_values(act_raw);
+
+  hm.push_observation(obs_ort);
+  hm.push_observation(obs2_ort);
+  hm.push_action(act_ort);
+
   ASSERT_EQ(hm.observations().size(), 2u);
   ASSERT_EQ(hm.actions().size(), 1u);
-  EXPECT_FLOAT_EQ(hm.actions()[0][0], 9.0f);
+  EXPECT_FLOAT_EQ(*hm.actions()[0][0].GetTensorData<float>(), 9.0f);
 }
 
 TEST(HistoryManagerTest, SetLengthsToZeroClearsBuffers)
 {
   HistoryManager hm;
   hm.set_lengths(5, 5);
-  hm.push_observation({1.0f});
-  hm.push_action({2.0f});
+
+  std::vector<float> obs_raw = {1.0f};
+  std::vector<float> act_raw = {2.0f};
+  auto obs_ort = make_ort_values(obs_raw);
+  auto act_ort = make_ort_values(act_raw);
+
+  hm.push_observation(obs_ort);
+  hm.push_action(act_ort);
   hm.set_lengths(0, 0);
   EXPECT_TRUE(hm.observations().empty());
   EXPECT_TRUE(hm.actions().empty());

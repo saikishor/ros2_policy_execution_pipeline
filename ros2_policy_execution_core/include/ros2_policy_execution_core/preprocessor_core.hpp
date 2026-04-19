@@ -90,7 +90,7 @@ public:
    * @param[in] name Unique name for this segment (used for debugging/introspection)
    * @param[in] observation_segment_names Names of the individual segments provided by this
    *  provider (used for debugging/introspection)
-   * @param[in] provider Function that returns a vector of floats for this segment
+   * @param[in] provider Function that returns a vector of Ort::Values for this segment
    * @throws std::runtime_error if a provider with the same name already exists
    */
   void register_observation_provider(
@@ -181,7 +181,7 @@ public:
    *
    * @return const reference to the observation vector.
    */
-  [[nodiscard]] virtual const std::vector<float> & get_observation() const
+  [[nodiscard]] virtual const std::vector<Ort::Value> & get_observation() const
   {
     return current_observation_;
   }
@@ -193,7 +193,7 @@ public:
    *
    * @return const reference to the vector of observation vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<float>> & get_observation_history() const
+  [[nodiscard]] const std::deque<std::vector<Ort::Value>> & get_observation_history() const
   {
     return history_manager_.observations();
   }
@@ -205,17 +205,17 @@ public:
    *
    * @return const reference to the vector of action vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<float>> & get_action_history() const
+  [[nodiscard]] const std::deque<std::vector<Ort::Value>> & get_action_history() const
   {
     return history_manager_.actions();
   }
 
-  void set_previous_observations(const std::vector<float> & observations)
+  void set_previous_observations(const std::vector<Ort::Value> & observations)
   {
     history_manager_.push_observation(observations);
   }
 
-  void set_previous_actions(const std::vector<float> & actions)
+  void set_previous_actions(const std::vector<Ort::Value> & actions)
   {
     history_manager_.push_action(actions);
   }
@@ -232,7 +232,7 @@ public:
 
 private:
   /// Storage for the current observation vector
-  std::vector<float> current_observation_ = {};
+  std::vector<Ort::Value> current_observation_ = {};
   ObservationProviderRegistry provider_registry_;
   HistoryManager history_manager_;
 
