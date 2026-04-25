@@ -14,7 +14,10 @@
 //
 // Authors: Julia Jia
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
+#include <numeric>
 #include <vector>
 
 #include "onnxruntime_cxx_api.h"  // NOLINT(build/include_subdir)
@@ -43,6 +46,25 @@ std::vector<std::shared_ptr<Ort::Value>> make_ort_values(const std::vector<float
     values.push_back(std::move(tensor));
   }
   return values;
+}
+
+/// Creates a single Ort::Value tensor of type T with the given shape and data.
+template<typename T>
+std::shared_ptr<Ort::Value> make_typed_tensor(
+  const std::vector<T> & data,
+  const std::vector<int64_t> & shape)
+{
+  static Ort::AllocatorWithDefaultOptions allocator;
+  auto tensor = std::make_shared<Ort::Value>(
+    Ort::Value::CreateTensor<T>(allocator, shape.data(), shape.size()));
+  std::copy(data.begin(), data.end(), tensor->template GetTensorMutableData<T>());
+  return tensor;
+}
+
+/// Returns the total element count for a shape vector.
+int64_t shape_size(const std::vector<int64_t> & shape)
+{
+  return std::accumulate(shape.begin(), shape.end(), int64_t{1}, std::multiplies<int64_t>());
 }
 }  // namespace
 
@@ -134,4 +156,165 @@ TEST(HistoryManagerTest, SetLengthsToZeroClearsBuffers)
   EXPECT_TRUE(hm.actions().empty());
 }
 
+/// Scalar data-type tests
+// Each test verifies that a 1-D tensor of the given element type round-trips
+// through HistoryManager without corruption or type coercion.
+
+TEST(DataTypeTest, DoubleTensor)
+{
+  const std::vector<int64_t> shape = {3};
+  const std::vector<double> data = {1.1, 2.2, 3.3};
+  auto tensor = make_typed_tensor<double>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_DOUBLE);
+
+  const double * ptr = tensor->GetTensorData<double>();
+  for (size_t i = 0; i < data.size(); ++i) {
+    EXPECT_DOUBLE_EQ(ptr[i], data[i]);
+  }
+
+  HistoryManager hm;
+  hm.set_lengths(1, 0);
+  hm.push_observation({tensor});
+  ASSERT_EQ(hm.observations().size(), 1u);
+  EXPECT_DOUBLE_EQ(*hm.observations()[0][0]->GetTensorData<double>(), data[0]);
+}
+
+TEST(DataTypeTest, Int32Tensor)
+{
+  const std::vector<int64_t> shape = {4};
+  const std::vector<int32_t> data = {-100, 0, 100, std::numeric_limits<int32_t>::max()};
+  auto tensor = make_typed_tensor<int32_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_INT32);
+
+  const int32_t * ptr = tensor->GetTensorData<int32_t>();
+  for (size_t i = 0; i < data.size(); ++i) {
+    EXPECT_EQ(ptr[i], data[i]);
+  }
+
+  HistoryManager hm;
+  hm.set_lengths(1, 0);
+  hm.push_observation({tensor});
+  EXPECT_EQ(*hm.observations()[0][0]->GetTensorData<int32_t>(), data[0]);
+}
+
+TEST(DataTypeTest, Int64Tensor)
+{
+  // int64 is the canonical type for discrete action indices and token IDs.
+  const std::vector<int64_t> shape = {3};
+  const std::vector<int64_t> data = {0LL, 42LL, std::numeric_limits<int64_t>::max()};
+  auto tensor = make_typed_tensor<int64_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64);
+
+  const int64_t * ptr = tensor->GetTensorData<int64_t>();
+  for (size_t i = 0; i < data.size(); ++i) {
+    EXPECT_EQ(ptr[i], data[i]);
+  }
+
+  HistoryManager hm;
+  hm.set_lengths(1, 0);
+  hm.push_observation({tensor});
+  EXPECT_EQ(*hm.observations()[0][0]->GetTensorData<int64_t>(), data[0]);
+}
+
+TEST(DataTypeTest, Int16Tensor)
+{
+  const std::vector<int64_t> shape = {2};
+  const std::vector<int16_t> data = {-32768, 32767};
+  auto tensor = make_typed_tensor<int16_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_INT16);
+
+  const int16_t * ptr = tensor->GetTensorData<int16_t>();
+  EXPECT_EQ(ptr[0], data[0]);
+  EXPECT_EQ(ptr[1], data[1]);
+}
+
+TEST(DataTypeTest, Int8Tensor)
+{
+  const std::vector<int64_t> shape = {2};
+  const std::vector<int8_t> data = {-128, 127};
+  auto tensor = make_typed_tensor<int8_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_INT8);
+
+  const int8_t * ptr = tensor->GetTensorData<int8_t>();
+  EXPECT_EQ(ptr[0], data[0]);
+  EXPECT_EQ(ptr[1], data[1]);
+}
+
+TEST(DataTypeTest, UInt8Tensor)
+{
+  // uint8 is the standard element type for raw pixel data.
+  const std::vector<int64_t> shape = {3};
+  const std::vector<uint8_t> data = {0u, 128u, 255u};
+  auto tensor = make_typed_tensor<uint8_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8);
+
+  const uint8_t * ptr = tensor->GetTensorData<uint8_t>();
+  for (size_t i = 0; i < data.size(); ++i) {
+    EXPECT_EQ(ptr[i], data[i]);
+  }
+}
+
+TEST(DataTypeTest, UInt16Tensor)
+{
+  // uint16 is typical for 16-bit depth images (e.g. RealSense, Kinect).
+  const std::vector<int64_t> shape = {2};
+  const std::vector<uint16_t> data = {0u, 65535u};
+  auto tensor = make_typed_tensor<uint16_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16);
+
+  const uint16_t * ptr = tensor->GetTensorData<uint16_t>();
+  EXPECT_EQ(ptr[0], data[0]);
+  EXPECT_EQ(ptr[1], data[1]);
+}
+
+TEST(DataTypeTest, UInt32Tensor)
+{
+  const std::vector<int64_t> shape = {2};
+  const std::vector<uint32_t> data = {0u, std::numeric_limits<uint32_t>::max()};
+  auto tensor = make_typed_tensor<uint32_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT32);
+
+  const uint32_t * ptr = tensor->GetTensorData<uint32_t>();
+  EXPECT_EQ(ptr[0], data[0]);
+  EXPECT_EQ(ptr[1], data[1]);
+}
+
+TEST(DataTypeTest, UInt64Tensor)
+{
+  const std::vector<int64_t> shape = {2};
+  const std::vector<uint64_t> data = {0ull, std::numeric_limits<uint64_t>::max()};
+  auto tensor = make_typed_tensor<uint64_t>(data, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT64);
+
+  const uint64_t * ptr = tensor->GetTensorData<uint64_t>();
+  EXPECT_EQ(ptr[0], data[0]);
+  EXPECT_EQ(ptr[1], data[1]);
+}
 }  // namespace ros2_policy_execution_core
