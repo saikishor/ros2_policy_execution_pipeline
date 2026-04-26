@@ -317,4 +317,118 @@ TEST(DataTypeTest, UInt64Tensor)
   EXPECT_EQ(ptr[0], data[0]);
   EXPECT_EQ(ptr[1], data[1]);
 }
+
+// Image / multi-dimensional tensor tests
+// Physical-AI pipelines frequently feed whole images directly into policies.
+// These tests confirm that HWC / CHW / NCHW tensors survive the
+// ObservationProviderRegistry to HistoryManager round-trip intact.
+
+TEST(ImageDataTest, RGBImageUInt8_HWC)
+{
+  // Simulate a small 4×4 RGB image in HWC layout (H=4, W=4, C=3).
+  const int64_t H = 4, W = 4, C = 3;
+  const std::vector<int64_t> shape = {H, W, C};
+  const int64_t n_elems = shape_size(shape);
+
+  std::vector<uint8_t> pixels(n_elems);
+  std::iota(pixels.begin(), pixels.end(), uint8_t{0});
+  auto tensor = make_typed_tensor<uint8_t>(pixels, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8);
+  EXPECT_EQ(tensor->GetTensorTypeAndShapeInfo().GetShape(), shape);
+  EXPECT_EQ(tensor->GetTensorTypeAndShapeInfo().GetElementCount(), static_cast<size_t>(n_elems));
+
+  const uint8_t * ptr = tensor->GetTensorData<uint8_t>();
+  for (int64_t i = 0; i < n_elems; ++i) {
+    EXPECT_EQ(ptr[i], static_cast<uint8_t>(i));
+  }
+
+  HistoryManager hm;
+  hm.set_lengths(1, 0);
+  hm.push_observation({tensor});
+  ASSERT_EQ(hm.observations().size(), 1u);
+  EXPECT_EQ(
+    hm.observations()[0][0]->GetTensorTypeAndShapeInfo().GetShape(), shape);
+}
+
+TEST(ImageDataTest, DepthImageFloat_HW)
+{
+  // Simulate a 4×4 float depth map (metric metres, HW layout).
+  const int64_t H = 4, W = 4;
+  const std::vector<int64_t> shape = {H, W};
+  const int64_t n_elems = shape_size(shape);
+
+  std::vector<float> depth(n_elems);
+  for (int64_t i = 0; i < n_elems; ++i) {
+    depth[i] = static_cast<float>(i) * 0.1f;
+  }
+  auto tensor = make_typed_tensor<float>(depth, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+  EXPECT_EQ(tensor->GetTensorTypeAndShapeInfo().GetShape(), shape);
+
+  const float * ptr = tensor->GetTensorData<float>();
+  EXPECT_FLOAT_EQ(ptr[0], 0.0f);
+  EXPECT_FLOAT_EQ(ptr[n_elems - 1], static_cast<float>(n_elems - 1) * 0.1f);
+
+  HistoryManager hm;
+  hm.set_lengths(1, 0);
+  hm.push_observation({tensor});
+  EXPECT_EQ(
+    hm.observations()[0][0]->GetTensorTypeAndShapeInfo().GetShape(), shape);
+}
+
+TEST(ImageDataTest, DepthImageUInt16_HW)
+{
+  // Simulate a 4×4 uint16 depth image as returned by a raw depth sensor.
+  const int64_t H = 4, W = 4;
+  const std::vector<int64_t> shape = {H, W};
+  const int64_t n_elems = shape_size(shape);
+
+  std::vector<uint16_t> depth(n_elems);
+  std::iota(depth.begin(), depth.end(), uint16_t{1000});
+  auto tensor = make_typed_tensor<uint16_t>(depth, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT16);
+  EXPECT_EQ(tensor->GetTensorTypeAndShapeInfo().GetShape(), shape);
+
+  const uint16_t * ptr = tensor->GetTensorData<uint16_t>();
+  EXPECT_EQ(ptr[0], uint16_t{1000});
+  EXPECT_EQ(ptr[n_elems - 1], static_cast<uint16_t>(1000 + n_elems - 1));
+}
+
+TEST(ImageDataTest, NormalizedNCHWFloat)
+{
+  // Typical normalised image tensor fed to vision models: [N=1, C=3, H=4, W=4].
+  const int64_t N = 1, C = 3, H = 4, W = 4;
+  const std::vector<int64_t> shape = {N, C, H, W};
+  const int64_t n_elems = shape_size(shape);
+
+  std::vector<float> img(n_elems);
+  for (int64_t i = 0; i < n_elems; ++i) {
+    img[i] = static_cast<float>(i) / static_cast<float>(n_elems - 1);  // [0, 1]
+  }
+  auto tensor = make_typed_tensor<float>(img, shape);
+
+  EXPECT_EQ(
+    tensor->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+  EXPECT_EQ(tensor->GetTensorTypeAndShapeInfo().GetShape(), shape);
+  EXPECT_FLOAT_EQ(tensor->GetTensorData<float>()[0], 0.0f);
+  EXPECT_FLOAT_EQ(tensor->GetTensorData<float>()[n_elems - 1], 1.0f);
+
+  HistoryManager hm;
+  hm.set_lengths(2, 0);
+  hm.push_observation({tensor});
+  hm.push_observation({tensor});  // duplicate frame simulates two consecutive steps
+  ASSERT_EQ(hm.observations().size(), 2u);
+  EXPECT_EQ(
+    hm.observations()[0][0]->GetTensorTypeAndShapeInfo().GetShape(), shape);
+}
 }  // namespace ros2_policy_execution_core
