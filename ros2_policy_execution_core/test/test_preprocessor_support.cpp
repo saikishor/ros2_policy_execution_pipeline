@@ -431,4 +431,122 @@ TEST(ImageDataTest, NormalizedNCHWFloat)
   EXPECT_EQ(
     hm.observations()[0][0]->GetTensorTypeAndShapeInfo().GetShape(), shape);
 }
+
+// Mixed-type provider tests
+
+TEST(HistoryManagerTest, MultiDimTensorRoundTrip)
+{
+  // Verify that 2-D joint-space matrices (e.g. [joints=7, features=3]) survive.
+  const std::vector<int64_t> shape = {7, 3};
+  const int64_t n_elems = shape_size(shape);
+  std::vector<float> data(n_elems);
+  std::iota(data.begin(), data.end(), 0.5f);
+
+  auto tensor = make_typed_tensor<float>(data, shape);
+
+  HistoryManager hm;
+  hm.set_lengths(3, 0);
+  hm.push_observation({tensor});
+
+  ASSERT_EQ(hm.observations().size(), 1u);
+  const auto & retrieved = hm.observations()[0][0];
+  EXPECT_EQ(retrieved->GetTensorTypeAndShapeInfo().GetShape(), shape);
+  const float * ptr = retrieved->GetTensorData<float>();
+  for (int64_t i = 0; i < n_elems; ++i) {
+    EXPECT_FLOAT_EQ(ptr[i], data[i]);
+  }
+}
+
+TEST(RegistryTest, MixedTypeProviders)
+{
+  // Registry holding providers that return different ONNX element types —
+  // typical in physical AI where joint states (float) and camera frames
+  // (uint8) come from different sources.
+
+  const std::vector<int64_t> float_shape = {6};    // 6-DOF joint positions
+  const std::vector<int64_t> image_shape = {4, 4, 3};  // small HWC RGB patch
+
+  std::vector<float> joint_data = {0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f};
+  std::vector<uint8_t> pixel_data(shape_size(image_shape));
+  std::iota(pixel_data.begin(), pixel_data.end(), uint8_t{10});
+
+  auto joint_tensor = make_typed_tensor<float>(joint_data, float_shape);
+  auto image_tensor = make_typed_tensor<uint8_t>(pixel_data, image_shape);
+
+  std::vector<std::shared_ptr<Ort::Value>> joint_vec = {joint_tensor};
+  std::vector<std::shared_ptr<Ort::Value>> image_vec = {image_tensor};
+
+  rclcpp::Time t(0, 0);
+  ObservationData joint_obs{joint_vec, t};
+  ObservationData image_obs{image_vec, t};
+
+  ObservationProviderRegistry registry;
+  registry.register_provider(
+    "joint_states", {"q1", "q2", "q3", "q4", "q5", "q6"},
+    [&joint_obs]() -> const ObservationData & {return joint_obs;});
+  registry.register_provider(
+    "rgb_camera", {"image"},
+    [&image_obs]() -> const ObservationData & {return image_obs;});
+
+  ASSERT_EQ(registry.providers().size(), 2u);
+
+  const auto & joint_result = registry.providers()[0].second();
+  ASSERT_EQ(joint_result.values.size(), 1u);
+  EXPECT_EQ(
+    joint_result.values[0]->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+  EXPECT_EQ(joint_result.values[0]->GetTensorTypeAndShapeInfo().GetShape(), float_shape);
+  EXPECT_FLOAT_EQ(joint_result.values[0]->GetTensorData<float>()[0], 0.1f);
+
+  const auto & image_result = registry.providers()[1].second();
+  ASSERT_EQ(image_result.values.size(), 1u);
+  EXPECT_EQ(
+    image_result.values[0]->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8);
+  EXPECT_EQ(image_result.values[0]->GetTensorTypeAndShapeInfo().GetShape(), image_shape);
+  EXPECT_EQ(image_result.values[0]->GetTensorData<uint8_t>()[0], uint8_t{10});
+}
+
+TEST(HistoryManagerTest, MixedTypeTensorsInSingleObservation)
+{
+  // A single observation snapshot may bundle different tensor types
+  // (e.g. float joint state + uint8 image + int64 discrete token).
+  const std::vector<int64_t> fshape = {6};
+  const std::vector<int64_t> ishape = {2, 2, 3};
+  const std::vector<int64_t> tshape = {1};
+
+  std::vector<float> jdata = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  std::vector<uint8_t> pdata(shape_size(ishape), uint8_t{255});
+  std::vector<int64_t> tdata = {7LL};
+
+  auto joint_tensor = make_typed_tensor<float>(jdata, fshape);
+  auto image_tensor = make_typed_tensor<uint8_t>(pdata, ishape);
+  auto token_tensor = make_typed_tensor<int64_t>(tdata, tshape);
+
+  std::vector<std::shared_ptr<Ort::Value>> obs = {joint_tensor, image_tensor, token_tensor};
+
+  HistoryManager hm;
+  hm.set_lengths(2, 0);
+  hm.push_observation(obs);
+
+  ASSERT_EQ(hm.observations().size(), 1u);
+  const auto & snap = hm.observations()[0];
+  ASSERT_EQ(snap.size(), 3u);
+
+  EXPECT_EQ(
+    snap[0]->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT);
+  EXPECT_FLOAT_EQ(snap[0]->GetTensorData<float>()[0], 1.0f);
+
+  EXPECT_EQ(
+    snap[1]->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_UINT8);
+  EXPECT_EQ(snap[1]->GetTensorData<uint8_t>()[0], uint8_t{255});
+
+  EXPECT_EQ(
+    snap[2]->GetTensorTypeAndShapeInfo().GetElementType(),
+    ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64);
+  EXPECT_EQ(snap[2]->GetTensorData<int64_t>()[0], int64_t{7});
+}
+
 }  // namespace ros2_policy_execution_core
