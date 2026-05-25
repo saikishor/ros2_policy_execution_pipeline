@@ -20,16 +20,34 @@ Core library for the ROS 2 policy execution pipeline. Provides base classes for 
 
 ---
 
+## Common Types
+
+`onnxruntime_types.hpp` provides a shared pointer alias used throughout the pipeline:
+
+```cpp
+#include "ros2_policy_execution_core/onnxruntime_types.hpp"
+
+// ros2_policy_execution_core::OrtValueSharedPtr
+using OrtValueSharedPtr = std::shared_ptr<Ort::Value>;
+```
+
+All three pipeline stages pass data as `std::vector<OrtValueSharedPtr>`, avoiding copies between stages.
+
+---
+
 ## InferenceCore
 
 Abstract base class for neural network inference engines. Implement this to integrate different ML frameworks (ONNX, TensorRT, PyTorch, etc.).
 
+Inputs and outputs are passed as `std::vector<OrtValueSharedPtr>` (ONNX tensors), keeping data on the device without copies between pipeline stages.
 
 ---
 
 ## PostprocessorCore
 
 Abstract base class for action postprocessing. Implement this to apply scaling, limiting, smoothing, or other transformations to raw policy outputs.
+
+Input and output use `std::vector<OrtValueSharedPtr>` to stay consistent with the tensor types produced by `InferenceCore`.
 
 
 ---
@@ -43,13 +61,13 @@ Register callbacks that provide observation data. Providers are called in regist
 ### ObservationData Structure
 
 Providers return `ObservationData` containing:
-- `values`: const reference to the observation vector
+- `values`: const reference to the observation tensors
 - `timestamp`: `rclcpp::Time` when the data was captured
 
 ```cpp
 struct ObservationData
 {
-  const std::vector<double>& values;
+  const std::vector<OrtValueSharedPtr> & values;
   rclcpp::Time timestamp;
 };
 ```
@@ -79,13 +97,13 @@ const auto& action_history = preprocessor.get_action_history();
 
 | Method | Description |
 |--------|-------------|
-| `run_inference(obs, action)` | Run inference on observations, populate action vector |
+| `run_inference(obs, output)` | Run inference on `OrtValueSharedPtr` observation tensors, populate output tensors |
 
 ### PostprocessorCore
 
 | Method | Description |
 |--------|-------------|
-| `process(actions)` | Process raw actions and return final commands |
+| `process(inference_output)` | Process `OrtValueSharedPtr` inference tensors and return final command tensors |
 
 ### PreprocessorCore
 

@@ -21,6 +21,8 @@
 
 #include "rclcpp/node.hpp"
 
+#include "ros2_policy_execution_core/onnxruntime_types.hpp"
+
 namespace ros2_policy_execution_core
 {
 
@@ -55,11 +57,11 @@ public:
    * This pure virtual method must be implemented by derived classes to perform
    * the final postprocessing on the inference output and produce the commands to be sent.
    *
-   * @param[in] inference_output The output vector from inference to be postprocessed.
-   * @return The final commands vector to be sent.
+   * @param[in] inference_output The output tensors from inference to be postprocessed.
+   * @return The final command tensors to be sent.
    */
-  virtual [[nodiscard]] const std::vector<float> & process(
-    const std::vector<float> & inference_output) = 0;
+  [[nodiscard]] virtual const std::vector<OrtValueSharedPtr> & process(
+    const std::vector<OrtValueSharedPtr> & inference_output) = 0;
 };
 
 }  // namespace ros2_policy_execution_core

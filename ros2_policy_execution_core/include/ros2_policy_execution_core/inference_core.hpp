@@ -21,6 +21,8 @@
 
 #include "rclcpp/node.hpp"
 
+#include "ros2_policy_execution_core/onnxruntime_types.hpp"
+
 namespace ros2_policy_execution_core
 {
 
@@ -55,11 +57,13 @@ public:
    * This pure virtual method must be implemented by derived classes to perform
    * the actual inference computation using the loaded policy model.
    *
-   * @param[in] obs The observation vector to use as input for inference.
-   * @param[out] output The output vector that will be populated with the inference results.
+   * @param[in] obs The observation tensors to use as input for inference.
+   * @param[out] output The output tensors that will be populated with the inference results.
    * @return true if inference was successful, false otherwise.
    */
-  virtual bool run_inference(const std::vector<float> & obs, std::vector<float> & output) = 0;
+  virtual bool run_inference(
+    const std::vector<OrtValueSharedPtr> & obs,
+    std::vector<OrtValueSharedPtr> & output) = 0;
 };
 
 }  // namespace ros2_policy_execution_core
