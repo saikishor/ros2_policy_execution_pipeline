@@ -34,7 +34,15 @@ namespace ros2_policy_execution_core
 /**
  * @brief Data returned by an observation provider.
  *
- * Contains both the observation values and an optional timestamp.
+ * Contains both the observation values and a timestamp.
+ *
+ * Lifetime contract:
+ * - `values` is a borrowed reference.
+ * - The referenced vector must remain valid for the full `build_observation()` call.
+ * - In real-time paths, providers are expected to use stable pre-allocated storage and update
+ *   contents in place.
+ * - Providers must not return references to temporary/local vectors or storage that may be
+ *   reallocated concurrently.
  */
 struct ObservationData
 {
