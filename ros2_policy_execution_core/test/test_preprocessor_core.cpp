@@ -17,7 +17,7 @@
 #include <string>
 #include <vector>
 
-#include "onnxruntime_cxx_api.h"  // NOLINT(build/include_subdir)
+#include "ros2_policy_execution_core/onnxruntime_types.hpp"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "rclcpp/rclcpp.hpp"
@@ -31,11 +31,11 @@ namespace
 {
 /// Creates one 1-D single-element Ort::Value tensor per float, using ORT's allocator.
 /// The returned shared_ptrs own their memory — no external backing data required.
-std::vector<std::shared_ptr<Ort::Value>> make_ort_values(const std::vector<float> & data)
+std::vector<OrtValueSharedPtr> make_ort_values(const std::vector<float> & data)
 {
   static Ort::AllocatorWithDefaultOptions allocator;
   std::vector<int64_t> shape = {1};
-  std::vector<std::shared_ptr<Ort::Value>> values;
+  std::vector<OrtValueSharedPtr> values;
   values.reserve(data.size());
   for (float v : data) {
     auto tensor = std::make_shared<Ort::Value>(

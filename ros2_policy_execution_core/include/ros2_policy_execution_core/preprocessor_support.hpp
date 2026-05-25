@@ -24,9 +24,9 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <onnxruntime_cxx_api.h>
-
 #include "rclcpp/time.hpp"
+
+#include "ros2_policy_execution_core/onnxruntime_types.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -38,7 +38,7 @@ namespace ros2_policy_execution_core
  */
 struct ObservationData
 {
-  const std::vector<std::shared_ptr<Ort::Value>> & values;  ///< Reference to observation values
+  const std::vector<OrtValueSharedPtr> & values;  ///< Reference to observation values
   rclcpp::Time timestamp;                                    ///< Timestamp of the observation data
 };
 
@@ -148,7 +148,7 @@ public:
    * @param[in] observation Vector to store; must match prior entry size when history is non-empty.
    * @throws std::runtime_error if the vector size is inconsistent with existing history.
    */
-  void push_observation(const std::vector<std::shared_ptr<Ort::Value>> & observation)
+  void push_observation(const std::vector<OrtValueSharedPtr> & observation)
   {
     push_entry(observation, observation_history_length_, observations_, "Observation");
   }
@@ -159,7 +159,7 @@ public:
    * @param[in] action Vector to store; must match prior entry size when history is non-empty.
    * @throws std::runtime_error if the vector size is inconsistent with existing history.
    */
-  void push_action(const std::vector<std::shared_ptr<Ort::Value>> & action)
+  void push_action(const std::vector<OrtValueSharedPtr> & action)
   {
     push_entry(action, action_history_length_, actions_, "Action");
   }
@@ -170,7 +170,7 @@ public:
    *
    * @return const reference to observation history vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<std::shared_ptr<Ort::Value>>> & observations() const
+  [[nodiscard]] const std::deque<std::vector<OrtValueSharedPtr>> & observations() const
   {
     return observations_;
   }
@@ -181,14 +181,14 @@ public:
    *
    * @return const reference to action history vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<std::shared_ptr<Ort::Value>>> & actions() const
+  [[nodiscard]] const std::deque<std::vector<OrtValueSharedPtr>> & actions() const
   {
     return actions_;
   }
 
 private:
   static void trim_to_length(
-    std::deque<std::vector<std::shared_ptr<Ort::Value>>> & data,
+    std::deque<std::vector<OrtValueSharedPtr>> & data,
     size_t max_length)
   {
     if (max_length == 0) {
@@ -201,8 +201,8 @@ private:
   }
 
   static void push_entry(
-    const std::vector<std::shared_ptr<Ort::Value>> & values, size_t max_length,
-    std::deque<std::vector<std::shared_ptr<Ort::Value>>> & history,
+    const std::vector<OrtValueSharedPtr> & values, size_t max_length,
+    std::deque<std::vector<OrtValueSharedPtr>> & history,
     const std::string & value_name)
   {
     if (max_length == 0) {
@@ -224,9 +224,9 @@ private:
   /// Configured maximum action history length (0 disables).
   size_t action_history_length_ = 0;
   /// Observation snapshots; front is newest.
-  std::deque<std::vector<std::shared_ptr<Ort::Value>>> observations_ = {};
+  std::deque<std::vector<OrtValueSharedPtr>> observations_ = {};
   /// Action snapshots; front is newest.
-  std::deque<std::vector<std::shared_ptr<Ort::Value>>> actions_ = {};
+  std::deque<std::vector<OrtValueSharedPtr>> actions_ = {};
 };
 
 }  // namespace ros2_policy_execution_core
