@@ -33,13 +33,25 @@ using OrtValueSharedPtr = std::shared_ptr<Ort::Value>;
 
 All three pipeline stages pass data as `std::vector<OrtValueSharedPtr>`, avoiding copies between stages.
 
+### Why ONNX Runtime? (Datatype, not framework lock-in)
+
+The dependency on ONNX Runtime is a dependency on its **datatype** (`Ort::Value`), not on ONNX as the inference framework. `Ort::Value` is used purely as the shared, backend-agnostic data contract between the preprocessor, inference, and postprocessor stages because it natively represents every tensor element type the pipeline needs (`float`, `uint8_t` for images, `int64_t`, `bool`, `float16`, …) with type-safe typed accessors and solves history-buffer ownership via `shared_ptr<Ort::Value>` + ORT's allocator.
+
+This does **not** mean the pipeline is ONNX-only. Other inference frameworks — TensorRT, OpenVINO, PyTorch, JAX, etc. — are fully supported as long as their data is converted to and from `Ort::Value` inside the `InferenceCore` implementation:
+
+```
+Ort::Value → (framework-specific tensor) → Inference → (framework-specific tensor) → Ort::Value
+```
+
+The inference node is the only framework-specific component. Preprocessors and postprocessors are identical across all backends, since they only ever see `Ort::Value`. The trade-off is that ONNX Runtime is a compile-time dependency for all pipeline plugins (even framework-agnostic preprocessors/postprocessors and tests), because they share the `Ort::Value` contract type.
+
 ---
 
 ## InferenceCore
 
-Abstract base class for neural network inference engines. Implement this to integrate different ML frameworks (ONNX, TensorRT, PyTorch, etc.).
+Abstract base class for neural network inference engines. Implement this to integrate different ML frameworks (ONNX, TensorRT, PyTorch, OpenVINO, JAX, etc.). This is the **only** framework-specific stage: a non-ONNX backend converts the incoming `Ort::Value` inputs to its own tensor type, runs inference, and converts the results back to `Ort::Value` (see [Why ONNX Runtime?](#why-onnx-runtime-datatype-not-framework-lock-in)).
 
-Inputs and outputs are passed as `std::vector<OrtValueSharedPtr>` (ONNX tensors), keeping data on the device without copies between pipeline stages.
+Inputs and outputs are passed as `std::vector<OrtValueSharedPtr>` (the `Ort::Value` data contract), keeping data on the device without copies between pipeline stages.
 
 ---
 
