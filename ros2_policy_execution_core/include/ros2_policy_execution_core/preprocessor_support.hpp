@@ -19,12 +19,14 @@
 
 #include <deque>
 #include <functional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
-
 #include "rclcpp/time.hpp"
+
+#include "ros2_policy_execution_core/onnxruntime_types.hpp"
 
 namespace ros2_policy_execution_core
 {
@@ -32,12 +34,20 @@ namespace ros2_policy_execution_core
 /**
  * @brief Data returned by an observation provider.
  *
- * Contains both the observation values and an optional timestamp.
+ * Contains both the observation values and a timestamp.
+ *
+ * Lifetime contract:
+ * - `values` is a borrowed reference.
+ * - The referenced vector must remain valid for the full `build_observation()` call.
+ * - In real-time paths, providers are expected to use stable pre-allocated storage and update
+ *   contents in place.
+ * - Providers must not return references to temporary/local vectors or storage that may be
+ *   reallocated concurrently.
  */
 struct ObservationData
 {
-  const std::vector<float> & values;  ///< Reference to observation values
-  rclcpp::Time timestamp;              ///< Timestamp of the observation data
+  const std::vector<OrtValueSharedPtr> & values;  ///< Reference to observation values
+  rclcpp::Time timestamp;                                    ///< Timestamp of the observation data
 };
 
 /**
@@ -146,7 +156,7 @@ public:
    * @param[in] observation Vector to store; must match prior entry size when history is non-empty.
    * @throws std::runtime_error if the vector size is inconsistent with existing history.
    */
-  void push_observation(const std::vector<float> & observation)
+  void push_observation(const std::vector<OrtValueSharedPtr> & observation)
   {
     push_entry(observation, observation_history_length_, observations_, "Observation");
   }
@@ -157,7 +167,7 @@ public:
    * @param[in] action Vector to store; must match prior entry size when history is non-empty.
    * @throws std::runtime_error if the vector size is inconsistent with existing history.
    */
-  void push_action(const std::vector<float> & action)
+  void push_action(const std::vector<OrtValueSharedPtr> & action)
   {
     push_entry(action, action_history_length_, actions_, "Action");
   }
@@ -168,7 +178,10 @@ public:
    *
    * @return const reference to observation history vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<float>> & observations() const {return observations_;}
+  [[nodiscard]] const std::deque<std::vector<OrtValueSharedPtr>> & observations() const
+  {
+    return observations_;
+  }
 
   /**
    * @brief Return the action history deque.
@@ -176,10 +189,15 @@ public:
    *
    * @return const reference to action history vectors.
    */
-  [[nodiscard]] const std::deque<std::vector<float>> & actions() const {return actions_;}
+  [[nodiscard]] const std::deque<std::vector<OrtValueSharedPtr>> & actions() const
+  {
+    return actions_;
+  }
 
 private:
-  static void trim_to_length(std::deque<std::vector<float>> & data, size_t max_length)
+  static void trim_to_length(
+    std::deque<std::vector<OrtValueSharedPtr>> & data,
+    size_t max_length)
   {
     if (max_length == 0) {
       data.clear();
@@ -191,7 +209,8 @@ private:
   }
 
   static void push_entry(
-    const std::vector<float> & values, size_t max_length, std::deque<std::vector<float>> & history,
+    const std::vector<OrtValueSharedPtr> & values, size_t max_length,
+    std::deque<std::vector<OrtValueSharedPtr>> & history,
     const std::string & value_name)
   {
     if (max_length == 0) {
@@ -213,9 +232,9 @@ private:
   /// Configured maximum action history length (0 disables).
   size_t action_history_length_ = 0;
   /// Observation snapshots; front is newest.
-  std::deque<std::vector<float>> observations_ = {};
+  std::deque<std::vector<OrtValueSharedPtr>> observations_ = {};
   /// Action snapshots; front is newest.
-  std::deque<std::vector<float>> actions_ = {};
+  std::deque<std::vector<OrtValueSharedPtr>> actions_ = {};
 };
 
 }  // namespace ros2_policy_execution_core
