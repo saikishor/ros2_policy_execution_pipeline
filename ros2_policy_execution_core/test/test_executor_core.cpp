@@ -24,18 +24,16 @@
 
 #include "ros2_policy_execution_core/executor_core.hpp"
 
-namespace ros2_policy_execution_core
-{
-
 namespace
 {
 /// Creates one 1-D single-element Ort::Value tensor per float, using ORT's allocator.
 /// The returned shared_ptrs own their memory — no external backing data required.
-std::vector<OrtValueSharedPtr> make_ort_values(const std::vector<float> & data)
+std::vector<ros2_policy_execution_core::OrtValueSharedPtr> make_ort_values(
+  const std::vector<float> & data)
 {
   static Ort::AllocatorWithDefaultOptions allocator;
   std::vector<int64_t> shape = {1};
-  std::vector<OrtValueSharedPtr> values;
+  std::vector<ros2_policy_execution_core::OrtValueSharedPtr> values;
   values.reserve(data.size());
   for (float v : data) {
     auto tensor = std::make_shared<Ort::Value>(
@@ -50,7 +48,7 @@ std::vector<OrtValueSharedPtr> make_ort_values(const std::vector<float> & data)
 /**
  * @brief A simple implementation of ExecutorCore for testing.
  */
-class TestableExecutorCore : public ExecutorCore
+class TestableExecutorCore : public ros2_policy_execution_core::ExecutorCore
 {
 public:
   void configure(const rclcpp::Node::SharedPtr & /*node*/) override
@@ -58,20 +56,22 @@ public:
     configured_ = true;
   }
 
-  bool execute(const std::vector<OrtValueSharedPtr> & commands) override
+  bool execute(
+    const std::vector<ros2_policy_execution_core::OrtValueSharedPtr> & commands) override
   {
     last_commands_ = commands;
     return succeed_;
   }
 
   bool is_configured() const {return configured_;}
-  const std::vector<OrtValueSharedPtr> & last_commands() const {return last_commands_;}
+  const std::vector<ros2_policy_execution_core::OrtValueSharedPtr> & last_commands() const
+  {return last_commands_;}
   void set_should_succeed(bool succeed) {succeed_ = succeed;}
 
 private:
   bool configured_ = false;
   bool succeed_ = true;
-  std::vector<OrtValueSharedPtr> last_commands_;
+  std::vector<ros2_policy_execution_core::OrtValueSharedPtr> last_commands_;
 };
 
 class ExecutorCoreTest : public ::testing::Test
@@ -125,7 +125,8 @@ TEST_F(ExecutorCoreTest, ExecutePropagatesFailure)
 
 TEST_F(ExecutorCoreTest, UsableThroughBasePointer)
 {
-  std::unique_ptr<ExecutorCore> base = std::make_unique<TestableExecutorCore>();
+  std::unique_ptr<ros2_policy_execution_core::ExecutorCore> base =
+    std::make_unique<TestableExecutorCore>();
   auto node = std::make_shared<rclcpp::Node>("test_node");
   base->configure(node);
 
@@ -139,19 +140,20 @@ TEST_F(ExecutorCoreTest, DestructionThroughBasePointerRunsDerivedDestructor)
   static bool destroyed = false;
   destroyed = false;
 
-  class DestructorTrackingExecutor : public ExecutorCore
+  class DestructorTrackingExecutor : public ros2_policy_execution_core::ExecutorCore
   {
 public:
     void configure(const rclcpp::Node::SharedPtr & /*node*/) override {}
-    bool execute(const std::vector<OrtValueSharedPtr> & /*commands*/) override {return true;}
+    bool execute(
+      const std::vector<ros2_policy_execution_core::OrtValueSharedPtr> & /*commands*/) override
+    {return true;}
     ~DestructorTrackingExecutor() override {destroyed = true;}
   };
 
   {
-    std::unique_ptr<ExecutorCore> base = std::make_unique<DestructorTrackingExecutor>();
+    std::unique_ptr<ros2_policy_execution_core::ExecutorCore> base =
+      std::make_unique<DestructorTrackingExecutor>();
   }
 
   EXPECT_TRUE(destroyed);
 }
-
-}  // namespace ros2_policy_execution_core

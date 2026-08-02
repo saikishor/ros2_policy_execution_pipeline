@@ -26,18 +26,16 @@
 
 #include "ros2_policy_execution_core/preprocessor_support.hpp"
 
-namespace ros2_policy_execution_core
-{
-
 namespace
 {
 /// Creates one 1-D single-element Ort::Value tensor per float, using ORT's allocator.
 /// The returned shared_ptrs own their memory — no external backing data required.
-std::vector<OrtValueSharedPtr> make_ort_values(const std::vector<float> & data)
+std::vector<ros2_policy_execution_core::OrtValueSharedPtr> make_ort_values(
+  const std::vector<float> & data)
 {
   static Ort::AllocatorWithDefaultOptions allocator;
   std::vector<int64_t> shape = {1};
-  std::vector<OrtValueSharedPtr> values;
+  std::vector<ros2_policy_execution_core::OrtValueSharedPtr> values;
   values.reserve(data.size());
   for (float v : data) {
     auto tensor = std::make_shared<Ort::Value>(
@@ -50,7 +48,7 @@ std::vector<OrtValueSharedPtr> make_ort_values(const std::vector<float> & data)
 
 /// Creates a single Ort::Value tensor of type T with the given shape and data.
 template<typename T>
-OrtValueSharedPtr make_typed_tensor(
+ros2_policy_execution_core::OrtValueSharedPtr make_typed_tensor(
   const std::vector<T> & data,
   const std::vector<int64_t> & shape)
 {
@@ -84,7 +82,7 @@ protected:
 
 TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndParallelSegments)
 {
-  ObservationProviderRegistry registry;
+  ros2_policy_execution_core::ObservationProviderRegistry registry;
   ASSERT_TRUE(registry.empty());
 
   std::vector<float> raw1 = {1.0f};
@@ -93,11 +91,15 @@ TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndPara
   auto v2 = make_ort_values(raw2);
   rclcpp::Time t1(1, 0);
   rclcpp::Time t2(2, 0);
-  ObservationData d1{v1, t1};
-  ObservationData d2{v2, t2};
+  ros2_policy_execution_core::ObservationData d1{v1, t1};
+  ros2_policy_execution_core::ObservationData d2{v2, t2};
 
-  registry.register_provider("p1", {"a"}, [&d1]() -> const ObservationData & {return d1;});
-  registry.register_provider("p2", {"b", "c"}, [&d2]() -> const ObservationData & {return d2;});
+  registry.register_provider(
+    "p1", {"a"},
+    [&d1]() -> const ros2_policy_execution_core::ObservationData & {return d1;});
+  registry.register_provider(
+    "p2", {"b", "c"},
+    [&d2]() -> const ros2_policy_execution_core::ObservationData & {return d2;});
 
   EXPECT_FALSE(registry.empty());
   ASSERT_EQ(registry.providers().size(), 2u);
@@ -120,7 +122,7 @@ TEST_F(PreprocessorSupportTest, ObservationProviderRegistry_RegisterOrderAndPara
 
 TEST(HistoryManagerTest, ObservationAndActionLengthsIndependent)
 {
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(2, 1);
 
   std::vector<float> obs_raw = {1.0f};
@@ -141,7 +143,7 @@ TEST(HistoryManagerTest, ObservationAndActionLengthsIndependent)
 
 TEST(HistoryManagerTest, SetLengthsToZeroClearsBuffers)
 {
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(5, 5);
 
   std::vector<float> obs_raw = {1.0f};
@@ -175,7 +177,7 @@ TEST(DataTypeTest, DoubleTensor)
     EXPECT_DOUBLE_EQ(ptr[i], data[i]);
   }
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(1, 0);
   hm.push_observation({tensor});
   ASSERT_EQ(hm.observations().size(), 1u);
@@ -197,7 +199,7 @@ TEST(DataTypeTest, Int32Tensor)
     EXPECT_EQ(ptr[i], data[i]);
   }
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(1, 0);
   hm.push_observation({tensor});
   EXPECT_EQ(*hm.observations()[0][0]->GetTensorData<int32_t>(), data[0]);
@@ -219,7 +221,7 @@ TEST(DataTypeTest, Int64Tensor)
     EXPECT_EQ(ptr[i], data[i]);
   }
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(1, 0);
   hm.push_observation({tensor});
   EXPECT_EQ(*hm.observations()[0][0]->GetTensorData<int64_t>(), data[0]);
@@ -345,7 +347,7 @@ TEST(ImageDataTest, RGBImageUInt8_HWC)
     EXPECT_EQ(ptr[i], static_cast<uint8_t>(i));
   }
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(1, 0);
   hm.push_observation({tensor});
   ASSERT_EQ(hm.observations().size(), 1u);
@@ -375,7 +377,7 @@ TEST(ImageDataTest, DepthImageFloat_HW)
   EXPECT_FLOAT_EQ(ptr[0], 0.0f);
   EXPECT_FLOAT_EQ(ptr[n_elems - 1], static_cast<float>(n_elems - 1) * 0.1f);
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(1, 0);
   hm.push_observation({tensor});
   EXPECT_EQ(
@@ -423,7 +425,7 @@ TEST(ImageDataTest, NormalizedNCHWFloat)
   EXPECT_FLOAT_EQ(tensor->GetTensorData<float>()[0], 0.0f);
   EXPECT_FLOAT_EQ(tensor->GetTensorData<float>()[n_elems - 1], 1.0f);
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(2, 0);
   hm.push_observation({tensor});
   hm.push_observation({tensor});  // duplicate frame simulates two consecutive steps
@@ -444,7 +446,7 @@ TEST(HistoryManagerTest, MultiDimTensorRoundTrip)
 
   auto tensor = make_typed_tensor<float>(data, shape);
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(3, 0);
   hm.push_observation({tensor});
 
@@ -473,20 +475,20 @@ TEST(RegistryTest, MixedTypeProviders)
   auto joint_tensor = make_typed_tensor<float>(joint_data, float_shape);
   auto image_tensor = make_typed_tensor<uint8_t>(pixel_data, image_shape);
 
-  std::vector<OrtValueSharedPtr> joint_vec = {joint_tensor};
-  std::vector<OrtValueSharedPtr> image_vec = {image_tensor};
+  std::vector<ros2_policy_execution_core::OrtValueSharedPtr> joint_vec = {joint_tensor};
+  std::vector<ros2_policy_execution_core::OrtValueSharedPtr> image_vec = {image_tensor};
 
   rclcpp::Time t(0, 0);
-  ObservationData joint_obs{joint_vec, t};
-  ObservationData image_obs{image_vec, t};
+  ros2_policy_execution_core::ObservationData joint_obs{joint_vec, t};
+  ros2_policy_execution_core::ObservationData image_obs{image_vec, t};
 
-  ObservationProviderRegistry registry;
+  ros2_policy_execution_core::ObservationProviderRegistry registry;
   registry.register_provider(
     "joint_states", {"q1", "q2", "q3", "q4", "q5", "q6"},
-    [&joint_obs]() -> const ObservationData & {return joint_obs;});
+    [&joint_obs]() -> const ros2_policy_execution_core::ObservationData & {return joint_obs;});
   registry.register_provider(
     "rgb_camera", {"image"},
-    [&image_obs]() -> const ObservationData & {return image_obs;});
+    [&image_obs]() -> const ros2_policy_execution_core::ObservationData & {return image_obs;});
 
   ASSERT_EQ(registry.providers().size(), 2u);
 
@@ -523,9 +525,10 @@ TEST(HistoryManagerTest, MixedTypeTensorsInSingleObservation)
   auto image_tensor = make_typed_tensor<uint8_t>(pdata, ishape);
   auto token_tensor = make_typed_tensor<int64_t>(tdata, tshape);
 
-  std::vector<OrtValueSharedPtr> obs = {joint_tensor, image_tensor, token_tensor};
+  std::vector<ros2_policy_execution_core::OrtValueSharedPtr> obs =
+  {joint_tensor, image_tensor, token_tensor};
 
-  HistoryManager hm;
+  ros2_policy_execution_core::HistoryManager hm;
   hm.set_lengths(2, 0);
   hm.push_observation(obs);
 
@@ -548,5 +551,3 @@ TEST(HistoryManagerTest, MixedTypeTensorsInSingleObservation)
     ONNX_TENSOR_ELEMENT_DATA_TYPE_INT64);
   EXPECT_EQ(snap[2]->GetTensorData<int64_t>()[0], int64_t{7});
 }
-
-}  // namespace ros2_policy_execution_core

@@ -24,18 +24,16 @@
 
 #include "ros2_policy_execution_core/preprocessor_core.hpp"
 
-namespace ros2_policy_execution_core
-{
-
 namespace
 {
 /// Creates one 1-D single-element Ort::Value tensor per float, using ORT's allocator.
 /// The returned shared_ptrs own their memory — no external backing data required.
-std::vector<OrtValueSharedPtr> make_ort_values(const std::vector<float> & data)
+std::vector<ros2_policy_execution_core::OrtValueSharedPtr> make_ort_values(
+  const std::vector<float> & data)
 {
   static Ort::AllocatorWithDefaultOptions allocator;
   std::vector<int64_t> shape = {1};
-  std::vector<OrtValueSharedPtr> values;
+  std::vector<ros2_policy_execution_core::OrtValueSharedPtr> values;
   values.reserve(data.size());
   for (float v : data) {
     auto tensor = std::make_shared<Ort::Value>(
@@ -50,7 +48,7 @@ std::vector<OrtValueSharedPtr> make_ort_values(const std::vector<float> & data)
 /**
  * @brief A simple implementation of PreprocessorCore for testing.
  */
-class TestablePreprocessorCore : public PreprocessorCore
+class TestablePreprocessorCore : public ros2_policy_execution_core::PreprocessorCore
 {
 public:
   void configure(const rclcpp::Node::SharedPtr & /*node*/) override
@@ -92,7 +90,7 @@ TEST_F(PreprocessorCoreTest, ConfigureCallsDerivedImplementation)
 
 TEST_F(PreprocessorCoreTest, SetConfigSetsHistoryLengths)
 {
-  PreprocessorCoreConfig config;
+  ros2_policy_execution_core::PreprocessorCoreConfig config;
   config.observation_history_length = 5;
   config.action_history_length = 3;
 
@@ -123,12 +121,12 @@ TEST_F(PreprocessorCoreTest, RegisterObservationProviderSuccess)
   std::vector<float> obs_raw = {1.0f, 2.0f, 3.0f};
   auto obs_ort = make_ort_values(obs_raw);
   rclcpp::Time timestamp(1000, 0);
-  ObservationData obs_data{obs_ort, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data{obs_ort, timestamp};
 
   preprocessor_->register_observation_provider(
     "test_provider",
     {"obs1", "obs2", "obs3"},
-    [&obs_data]() -> const ObservationData & {return obs_data;});
+    [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;});
 
   EXPECT_TRUE(preprocessor_->has_observation_providers());
 }
@@ -138,18 +136,18 @@ TEST_F(PreprocessorCoreTest, RegisterDuplicateObservationProviderThrows)
   std::vector<float> obs_raw = {1.0f};
   auto obs_ort = make_ort_values(obs_raw);
   rclcpp::Time timestamp(1000, 0);
-  ObservationData obs_data{obs_ort, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data{obs_ort, timestamp};
 
   preprocessor_->register_observation_provider(
     "duplicate_name",
     {"obs1"},
-    [&obs_data]() -> const ObservationData & {return obs_data;});
+    [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;});
 
   EXPECT_THROW(
     preprocessor_->register_observation_provider(
       "duplicate_name",
       {"obs1"},
-      [&obs_data]() -> const ObservationData & {return obs_data;}),
+      [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;}),
     std::runtime_error);
 }
 
@@ -158,12 +156,12 @@ TEST_F(PreprocessorCoreTest, ClearObservationProviders)
   std::vector<float> obs_raw = {1.0f};
   auto obs_ort = make_ort_values(obs_raw);
   rclcpp::Time timestamp(1000, 0);
-  ObservationData obs_data{obs_ort, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data{obs_ort, timestamp};
 
   preprocessor_->register_observation_provider(
     "provider1",
     {"obs1"},
-    [&obs_data]() -> const ObservationData & {return obs_data;});
+    [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;});
 
   EXPECT_TRUE(preprocessor_->has_observation_providers());
   preprocessor_->clear_observation_providers();
@@ -178,18 +176,18 @@ TEST_F(PreprocessorCoreTest, BuildObservationSuccess)
   auto ort2 = make_ort_values(raw2);
   rclcpp::Time timestamp1(900, 0);
   rclcpp::Time timestamp2(950, 0);
-  ObservationData obs_data1{ort1, timestamp1};
-  ObservationData obs_data2{ort2, timestamp2};
+  ros2_policy_execution_core::ObservationData obs_data1{ort1, timestamp1};
+  ros2_policy_execution_core::ObservationData obs_data2{ort2, timestamp2};
 
   preprocessor_->register_observation_provider(
     "provider1",
     {"a", "b"},
-    [&obs_data1]() -> const ObservationData & {return obs_data1;});
+    [&obs_data1]() -> const ros2_policy_execution_core::ObservationData & {return obs_data1;});
 
   preprocessor_->register_observation_provider(
     "provider2",
     {"c", "d", "e"},
-    [&obs_data2]() -> const ObservationData & {return obs_data2;});
+    [&obs_data2]() -> const ros2_policy_execution_core::ObservationData & {return obs_data2;});
 
   rclcpp::Time current_time(1000, 0);
   EXPECT_TRUE(preprocessor_->build_observation(current_time));
@@ -216,12 +214,12 @@ TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnEmptyVector)
   std::vector<float> empty_raw;
   auto empty_ort = make_ort_values(empty_raw);
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data{empty_ort, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data{empty_ort, timestamp};
 
   preprocessor_->register_observation_provider(
     "empty_provider",
     {},
-    [&obs_data]() -> const ObservationData & {return obs_data;});
+    [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;});
 
   rclcpp::Time current_time(1000, 0);
   EXPECT_THROW(preprocessor_->build_observation(current_time), std::runtime_error);
@@ -232,12 +230,12 @@ TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnFutureTimestamp)
   std::vector<float> obs_raw = {1.0f};
   auto obs_ort = make_ort_values(obs_raw);
   rclcpp::Time future_timestamp(2000, 0);
-  ObservationData obs_data{obs_ort, future_timestamp};
+  ros2_policy_execution_core::ObservationData obs_data{obs_ort, future_timestamp};
 
   preprocessor_->register_observation_provider(
     "future_provider",
     {"obs1"},
-    [&obs_data]() -> const ObservationData & {return obs_data;});
+    [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;});
 
   rclcpp::Time current_time(1000, 0);
   EXPECT_THROW(preprocessor_->build_observation(current_time), std::runtime_error);
@@ -248,12 +246,12 @@ TEST_F(PreprocessorCoreTest, BuildObservationThrowsOnSizeMismatch)
   std::vector<float> obs_raw = {1.0f, 2.0f};  // 2 values
   auto obs_ort = make_ort_values(obs_raw);
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data{obs_ort, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data{obs_ort, timestamp};
 
   preprocessor_->register_observation_provider(
     "mismatched_provider",
     {"obs1", "obs2", "obs3"},  // 3 segment names
-    [&obs_data]() -> const ObservationData & {return obs_data;});
+    [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;});
 
   rclcpp::Time current_time(1000, 0);
   EXPECT_THROW(preprocessor_->build_observation(current_time), std::runtime_error);
@@ -266,18 +264,18 @@ TEST_F(PreprocessorCoreTest, GetObservationNames)
   auto ort1 = make_ort_values(raw1);
   auto ort2 = make_ort_values(raw2);
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data1{ort1, timestamp};
-  ObservationData obs_data2{ort2, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data1{ort1, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data2{ort2, timestamp};
 
   preprocessor_->register_observation_provider(
     "provider1",
     {"joint1_pos", "joint2_pos"},
-    [&obs_data1]() -> const ObservationData & {return obs_data1;});
+    [&obs_data1]() -> const ros2_policy_execution_core::ObservationData & {return obs_data1;});
 
   preprocessor_->register_observation_provider(
     "provider2",
     {"velocity"},
-    [&obs_data2]() -> const ObservationData & {return obs_data2;});
+    [&obs_data2]() -> const ros2_policy_execution_core::ObservationData & {return obs_data2;});
 
   auto names = preprocessor_->get_observation_names();
   ASSERT_EQ(names.size(), 3u);
@@ -289,7 +287,7 @@ TEST_F(PreprocessorCoreTest, GetObservationNames)
 TEST_F(PreprocessorCoreTest, SetPreviousObservationsWithZeroHistoryLength)
 {
   // Default config has observation_history_length = 0
-  PreprocessorCoreConfig config;
+  ros2_policy_execution_core::PreprocessorCoreConfig config;
   config.observation_history_length = 0;
   preprocessor_->set_config(config);
 
@@ -303,7 +301,7 @@ TEST_F(PreprocessorCoreTest, SetPreviousObservationsWithZeroHistoryLength)
 
 TEST_F(PreprocessorCoreTest, SetPreviousObservationsThrowsOnSizeMismatch)
 {
-  PreprocessorCoreConfig config;
+  ros2_policy_execution_core::PreprocessorCoreConfig config;
   config.observation_history_length = 5;
   preprocessor_->set_config(config);
 
@@ -319,7 +317,7 @@ TEST_F(PreprocessorCoreTest, SetPreviousObservationsThrowsOnSizeMismatch)
 TEST_F(PreprocessorCoreTest, SetPreviousActionsWithZeroHistoryLength)
 {
   // Default config has action_history_length = 0
-  PreprocessorCoreConfig config;
+  ros2_policy_execution_core::PreprocessorCoreConfig config;
   config.action_history_length = 0;
   preprocessor_->set_config(config);
 
@@ -333,7 +331,7 @@ TEST_F(PreprocessorCoreTest, SetPreviousActionsWithZeroHistoryLength)
 
 TEST_F(PreprocessorCoreTest, SetPreviousActionsThrowsOnSizeMismatch)
 {
-  PreprocessorCoreConfig config;
+  ros2_policy_execution_core::PreprocessorCoreConfig config;
   config.action_history_length = 5;
   preprocessor_->set_config(config);
 
@@ -348,7 +346,7 @@ TEST_F(PreprocessorCoreTest, SetPreviousActionsThrowsOnSizeMismatch)
 
 TEST_F(PreprocessorCoreTest, HistoryOrderMostRecentFirst)
 {
-  PreprocessorCoreConfig config;
+  ros2_policy_execution_core::PreprocessorCoreConfig config;
   config.observation_history_length = 3;
   config.action_history_length = 3;
   preprocessor_->set_config(config);
@@ -391,7 +389,7 @@ TEST_F(PreprocessorCoreTest, HistoryOrderMostRecentFirst)
 
 TEST_F(PreprocessorCoreTest, HistoryPopsOldestWhenFull)
 {
-  PreprocessorCoreConfig config;
+  ros2_policy_execution_core::PreprocessorCoreConfig config;
   config.observation_history_length = 2;
   preprocessor_->set_config(config);
 
@@ -416,12 +414,12 @@ TEST_F(PreprocessorCoreTest, BuildObservationClearsAndRebuilds)
   std::vector<float> obs_raw = {1.0f};
   auto obs_ort = make_ort_values(obs_raw);
   rclcpp::Time timestamp(900, 0);
-  ObservationData obs_data{obs_ort, timestamp};
+  ros2_policy_execution_core::ObservationData obs_data{obs_ort, timestamp};
 
   preprocessor_->register_observation_provider(
     "provider",
     {"obs"},
-    [&obs_data]() -> const ObservationData & {return obs_data;});
+    [&obs_data]() -> const ros2_policy_execution_core::ObservationData & {return obs_data;});
 
   rclcpp::Time current_time(1000, 0);
   preprocessor_->build_observation(current_time);
@@ -432,5 +430,3 @@ TEST_F(PreprocessorCoreTest, BuildObservationClearsAndRebuilds)
   preprocessor_->build_observation(current_time);
   EXPECT_FLOAT_EQ(*preprocessor_->get_observation()[0]->GetTensorData<float>(), 100.0f);
 }
-
-}  // namespace ros2_policy_execution_core
