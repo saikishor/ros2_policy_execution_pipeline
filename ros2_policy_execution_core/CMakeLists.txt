@@ -45,6 +45,13 @@ if(BUILD_TESTING)
   target_link_libraries(test_preprocessor
     ${PROJECT_NAME}
   )
+
+  ament_add_gmock(test_executor
+    test/test_executor_core.cpp
+  )
+  target_link_libraries(test_executor
+    ${PROJECT_NAME}
+  )
 endif()
 
 ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)

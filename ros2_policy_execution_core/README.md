@@ -1,21 +1,23 @@
 # ros2_policy_execution_core
 
-Core library for the ROS 2 policy execution pipeline. Provides base classes for building a complete neural network policy inference pipeline with three stages:
+Core library for the ROS 2 policy execution pipeline. Provides base classes for building a complete neural network policy inference pipeline with four stages:
 
 1. **PreprocessorCore** - Collect and prepare observation data
 2. **InferenceCore** - Run neural network inference
 3. **PostprocessorCore** - Transform actions into final commands
+4. **ExecutorCore** - Send the final commands to the robot
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌─────────────────┐     ┌──────────────────┐
-│  Preprocessor   │────▶│    Inference    │────▶│  Postprocessor   │
-│                 │     │                 │     │                  │
-│ - Collect obs   │     │ - Run NN model  │     │ - Scale actions  │
-│ - Track time    │     │ - Produce raw   │     │ - Apply limits   │
-│ - Build vector  │     │   actions       │     │ - Final commands │
-└─────────────────┘     └─────────────────┘     └──────────────────┘
+┌─────────────────┐     ┌─────────────────┐     ┌──────────────────┐     ┌──────────────────┐
+│  Preprocessor   │────▶│    Inference    │────▶│  Postprocessor   │────▶│     Executor     │
+│                 │     │                 │     │                  │     │                  │
+│ - Collect obs   │     │ - Run NN model  │     │ - Scale actions  │     │ - Publish        │
+│ - Track time    │     │ - Produce raw   │     │ - Apply limits   │     │   commands       │
+│ - Build vector  │     │   actions       │     │ - Final commands │     │ - Write command  │
+│                 │     │                 │     │                  │     │   interfaces     │
+└─────────────────┘     └─────────────────┘     └──────────────────┘     └──────────────────┘
 ```
 
 ---
@@ -31,7 +33,7 @@ Core library for the ROS 2 policy execution pipeline. Provides base classes for 
 using OrtValueSharedPtr = std::shared_ptr<Ort::Value>;
 ```
 
-All three pipeline stages pass data as `std::vector<OrtValueSharedPtr>`, avoiding copies between stages.
+All four pipeline stages pass data as `std::vector<OrtValueSharedPtr>`, avoiding copies between stages.
 
 ### Why ONNX Runtime? (Datatype, not framework lock-in)
 
@@ -61,6 +63,13 @@ Abstract base class for action postprocessing. Implement this to apply scaling, 
 
 Input and output use `std::vector<OrtValueSharedPtr>` to stay consistent with the tensor types produced by `InferenceCore`.
 
+---
+
+## ExecutorCore
+
+Abstract base class for the terminal stage of the pipeline. Implement this to send the final command tensors produced by `PostprocessorCore` to the robot, either by publishing them to ROS topics or by writing them to ros2_control command interfaces.
+
+Input uses `std::vector<OrtValueSharedPtr>` to stay consistent with the tensor types produced by `PostprocessorCore`. The base class is deliberately free of any `ros2_control` dependency (no `hardware_interface`/`controller_interface`): a command-interface executor holds its own `hardware_interface::LoanedCommandInterface` references, obtained from whatever owns it (e.g. the controller instantiating the pipeline).
 
 ---
 
@@ -116,6 +125,12 @@ const auto& action_history = preprocessor.get_action_history();
 | Method | Description |
 |--------|-------------|
 | `process(inference_output)` | Process `OrtValueSharedPtr` inference tensors and return final command tensors |
+
+### ExecutorCore
+
+| Method | Description |
+|--------|-------------|
+| `execute(commands)` | Send the final `OrtValueSharedPtr` command tensors to the robot; returns true on success |
 
 ### PreprocessorCore
 
