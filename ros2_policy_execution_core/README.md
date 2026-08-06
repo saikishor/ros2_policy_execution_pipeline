@@ -147,3 +147,14 @@ const auto& action_history = preprocessor.get_action_history();
 | `set_previous_actions(action)` | Add action to history |
 | `get_observation_history()` | Get observation history (newest first) |
 | `get_action_history()` | Get action history (newest first) |
+
+---
+
+## Running the pipeline
+
+This package only provides the abstract base classes. To actually run a pipeline, implement each
+stage as a `pluginlib` plugin and use the
+[`ros2_policy_execution_pipeline`](../ros2_policy_execution_pipeline) package's
+`policy_execution_pipeline_node`, which loads the four plugins by name (from parameters) and drives
+the preprocess → infer → postprocess → execute cycle on a timer at a configurable rate. See that
+package's README for the parameter reference and an example configuration.
