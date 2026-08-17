@@ -63,7 +63,7 @@ void PolicyExecutionPipeline::init()
   const auto postprocessor_plugin = declare_and_get_required_string(node_, "postprocessor_plugin");
   const auto executor_plugin = declare_and_get_required_string(node_, "executor_plugin");
 
-  node_->declare_parameter<double>("update_rate", 100.0);
+  node_->declare_parameter<double>("update_rate", 50.0);
   const double update_rate = node_->get_parameter("update_rate").as_double();
   if (update_rate <= 0.0) {
     throw std::runtime_error("Parameter 'update_rate' must be > 0, got " +
