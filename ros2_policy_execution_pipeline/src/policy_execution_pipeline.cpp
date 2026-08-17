@@ -120,6 +120,13 @@ void PolicyExecutionPipeline::update()
   try {
     const rclcpp::Time now = node_->get_clock()->now();
 
+    if (!preprocessor_->has_observation_providers())
+    {
+      RCLCPP_WARN_THROTTLE(
+        node_->get_logger(), *node_->get_clock(), 1000,
+        "No preprecessor observation providers, skipping this cycle.");
+      return;
+    }
     if (!preprocessor_->build_observation(now)) {
       RCLCPP_WARN_THROTTLE(
         node_->get_logger(), *node_->get_clock(), 1000,
